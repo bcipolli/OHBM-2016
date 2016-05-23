@@ -114,8 +114,8 @@ def split_bilateral_rois(maps_img):
 
 
 def join_bilateral_rois(R_img, L_img):  # noqa
-    """Convenience function for splitting bilateral ROIs
-    into two unilateral ROIs"""
+    """Convenience function for joining two unilateral ROIs
+    into a bilateral ROIs"""
 
     joined_data = R_img.get_data() + L_img.get_data()
     return new_img_like(R_img, data=joined_data)

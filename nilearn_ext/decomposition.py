@@ -108,13 +108,14 @@ def compare_components(images, labels, scoring='l1norm',
     assert len(labels) == 2
     assert images[0].shape == images[1].shape
     n_components = images[0].shape[3]  # values @ 0 and 1 are the same
-
+    labels = [l.upper() for l in labels] # make input labels case insensitive
     print("Loading images.")
     for img in images:
         img.get_data()  # Just loaded to get them in memory..
 
     print("Scoring closest components (by %s)" % str(scoring))
     score_mat = np.zeros((n_components, n_components))
+    sign_mat = np.zeros((n_components, n_components), dtype=np.int)
     c1_data = [None] * n_components
     c2_data = [None] * n_components
 
@@ -137,13 +138,14 @@ def compare_components(images, labels, scoring='l1norm',
                     c1_data[c1i] = masker.transform(flip_img_lr(R_img)).ravel()
                 if c2_data[c2i] is None:
                     c2_data[c2i] = masker.transform(L_img).ravel()
-
+                
             elif 'R' in labels or 'L' in labels:
                 masker = rh_masker if 'R' in labels else lh_masker
                 if c1_data[c1i] is None:
                     c1_data[c1i] = masker.transform(comp1).ravel()
                 if c2_data[c2i] is None:
                     c2_data[c2i] = masker.transform(comp2).ravel()
+                
             else:
                 if c1_data[c1i] is None:
                     c1_data[c1i] = comp1.get_data().ravel()
@@ -152,7 +154,8 @@ def compare_components(images, labels, scoring='l1norm',
 
             # Choose a scoring system.
             # Score should indicate DISSIMILARITY
-            # Component sign is meaningless, so try both.
+            # Component sign is meaningless, so try both, but keep track of 
+            # comparisons that had better score when flipping the sign
             score = np.inf
             for sign in [1, -1]:
                 c1d, c2d = c1_data[c1i], sign * c2_data[c2i]
@@ -166,7 +169,9 @@ def compare_components(images, labels, scoring='l1norm',
                     sc = 1 - stats.stats.pearsonr(c1d, c2d)[0]
                 else:
                     raise NotImplementedError(scoring)
+                if sc < score:
+                    sign_mat[c1i, c2i] = sign
                 score = min(score, sc)
             score_mat[c1i, c2i] = score
 
-    return score_mat
+    return score_mat, sign_mat
