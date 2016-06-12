@@ -150,34 +150,20 @@ def get_dataset(dataset, max_images=np.inf, **kwargs):
     return images, term_scores
 
 
-def main(dataset, key="wb", force_match=False, n_components=20,
-         max_images=np.inf, scoring='l1norm', query_server=True,
-         force=False, nii_dir=None, plot_dir=None, random_state=42):
-    """
-    Compute components, then run requested comparisons.
+def do_main_analysis(dataset, images, term_scores,
+                     key="wb", force_match=False, n_components=20,
+                     max_images=np.inf, scoring='l1norm', query_server=True,
+                     force=False, nii_dir=None, plot_dir=None, random_state=42,
+                     hemis=('wb', 'R', 'L')):
 
-    "wb": R- and L- components are first matched to wb components, and concatenated
-    based on their match with wb components. Concatenated RL components are then
-    compared to wb components.
-
-    "rl": R- and L- components are compared and matched directly, using R as a ref.
-    If one-to-one matching is forced with force_match=True, this is identical as lr.
-
-    "lr": R- and L- components are compared and matched directly, using L as a ref.
-    If one-to-one matching is forced with force_match=True, this is identical as rl.
-
-    """
     # Output directories
     nii_dir = nii_dir or op.join('ica_nii', dataset, str(n_components))
     plot_dir = plot_dir or op.join('ica_imgs', dataset,
                                    '%s-%dics' % (scoring, n_components))
     plot_sub_dir = op.join(plot_dir, '%s-matching%s' % (key, '_forced' if force_match else ''))
 
-    images, term_scores = get_dataset(dataset, max_images=max_images,
-                                      query_server=query_server)
-
     # 1) Components are generated for R-, L-only, and whole brain images.
-    hemis = ['wb', 'R', 'L']
+
     imgs = {}
 
     # Load or generate components
@@ -273,6 +259,34 @@ def main(dataset, key="wb", force_match=False, n_components=20,
     return imgs, score_mats, sign_mats
 
 
+def main(dataset, key="wb", force_match=False, n_components=20,
+         max_images=np.inf, scoring='l1norm', query_server=True,
+         force=False, nii_dir=None, plot_dir=None, random_state=42):
+    """
+    Compute components, then run requested comparisons.
+
+    "wb": R- and L- components are first matched to wb components, and concatenated
+    based on their match with wb components. Concatenated RL components are then
+    compared to wb components.
+
+    "rl": R- and L- components are compared and matched directly, using R as a ref.
+    If one-to-one matching is forced with force_match=True, this is identical as lr.
+
+    "lr": R- and L- components are compared and matched directly, using L as a ref.
+    If one-to-one matching is forced with force_match=True, this is identical as rl.
+
+    """
+    images, term_scores = get_dataset(dataset, max_images=max_images,
+                                      query_server=query_server)
+
+    return do_main_analysis(
+        dataset=dataset, images=images, term_scores=term_scores,
+        key=key, force_match=force_match,
+        n_components=n_components, scoring=scoring,
+        force=force, nii_dir=nii_dir, plot_dir=plot_dir,
+        random_state=random_state)
+
+
 if __name__ == '__main__':
     import warnings
     from argparse import ArgumentParser
@@ -282,7 +296,7 @@ if __name__ == '__main__':
     warnings.simplefilter('error', RuntimeWarning)  # Detect bad NV images
 
     # Arg parsing
-    match_methods = ['wb', 'rl', 'lr']
+    match_methods = ('wb', 'rl', 'lr')
     parser = ArgumentParser(description="Run ICA on individual hemispheres, "
                                         "and whole brain, then compare.\n\n"
                                         "wb = R- and L- components are first matched "

@@ -7,8 +7,9 @@ qc/
 # Nilearn
 nilearn_cache/
 
-# Virtualenv
+# Virtualenv / pip
 env/
+src/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

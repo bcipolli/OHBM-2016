@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import re
 
-from main import main
+from main import do_main_analysis, get_dataset
 from nibabel_ext import NiftiImageWithTerms
 from nilearn_ext.masking import HemisphereMasker
 from nilearn_ext.plotting import save_and_close
@@ -35,13 +35,17 @@ def image_analyses(components, dataset, memory=Memory(cachedir='nilearn_cache'),
     out_dir = op.join('ica_imgs', dataset)
     images_key = ["R", "L", "wb"]
     sparsity_levels = ['pos_005', 'neg_005', 'abs_005']
-    # For each component type, store sparsity values for each sparsity level
-    sparsity = {hemi: {s: [] for s in sparsity_levels} for hemi in images_key}
 
     # For calculating hemispheric participation index (HPI) from wb components,
-    # prepare hemisphere maskers and hpi_vals dict to store hpi values
-    hemi_maskers = [HemisphereMasker(hemisphere=hemi, memory=memory).fit() for hemi in ['R', 'L']]
-    hpi_vals = {sign: {val: [] for val in ['vals', 'mean', 'sd']} for sign in ['pos', 'neg']}
+    # prepare hemisphere maskers
+    hemi_maskers = [HemisphereMasker(hemisphere=hemi, memory=memory).fit()
+                    for hemi in ['R', 'L']]
+
+    # Store sparsity (and hpi for wb) vals in a DF
+    columns = ["n_comp"] + sparsity_levels
+    wb_columns = columns + ["pos_hpi", "neg_hpi"]
+    hemi_dfs = {hemi: pd.DataFrame(columns=wb_columns if hemi == "wb" else columns)
+                for hemi in images_key}
 
     # Loop over components
     for c in components:
@@ -50,19 +54,17 @@ def image_analyses(components, dataset, memory=Memory(cachedir='nilearn_cache'),
         for hemi in images_key:
             img_path = op.join(nii_dir, '%s_ica_components.nii.gz' % (hemi))
             img = NiftiImageWithTerms.from_filename(img_path)
-
+            data = pd.DataFrame({"n_comp": [c] * c}, columns=columns)
             # get mean sparsity for the ica iamge and store in sparsity dict
             for s in sparsity_levels:
                 thresh = float('0.%s' % (re.findall('\d+', s)[0]))
-                # sparsity_vals is a list containing # of voxels above the given sparsity level
-                # for each component
+                # sparsity is # of voxels above the given sparsity level for each component
                 if 'pos' in s:
-                    sparsity_vals = (img.get_data() > thresh).sum(axis=0).sum(axis=0).sum(axis=0)
+                    data[s] = (img.get_data() > thresh).sum(axis=0).sum(axis=0).sum(axis=0)
                 elif 'neg' in s:
-                    sparsity_vals = (img.get_data() < -thresh).sum(axis=0).sum(axis=0).sum(axis=0)
+                    data[s] = (img.get_data() < -thresh).sum(axis=0).sum(axis=0).sum(axis=0)
                 elif 'abs' in s:
-                    sparsity_vals = (abs(img.get_data()) > thresh).sum(axis=0).sum(axis=0).sum(axis=0)
-                sparsity[hemi][s].append(sparsity_vals)
+                    data[s] = (abs(img.get_data()) > thresh).sum(axis=0).sum(axis=0).sum(axis=0)
 
             # get hpi values for wb components
             if hemi == "wb":
@@ -81,32 +83,26 @@ def image_analyses(components, dataset, memory=Memory(cachedir='nilearn_cache'),
                         # pos/neg HPI vals, calculated as (R-L)/(R+L) for num. of voxels above
                         # the given threshold
                         hpi = (val[0].astype(float) - val[1]) / (val[0] + val[1])
-                        hpi_mean = np.mean(hpi[np.isfinite(hpi)])
-                        hpi_sd = np.std(hpi[np.isfinite(hpi)])
-                        # set non finite values to 0
-                        hpi[~np.isfinite(hpi)] = 0
+                    data["%s_hpi" % (sign)] = hpi
 
-                    hpi_vals[sign]['vals'].append(hpi)
-                    hpi_vals[sign]['mean'].append(hpi_mean)
-                    hpi_vals[sign]['sd'].append(hpi_sd)
+            hemi_dfs[hemi] = hemi_dfs[hemi].append(data)
 
     # Now plot:
-    x = [[c] * c for c in components]
     # 1) Sparsity for wb, R and L ICA images
     fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
     sparsity_styles = {'pos_005': ['b', 'lightblue'],
                        'neg_005': ['r', 'lightpink'],
                        'abs_005': ['g', 'lightgreen']}
     for ax, hemi in zip(axes, images_key):
+        df = hemi_dfs[hemi]
+        by_comp = df.groupby('n_comp')
         for s in sparsity_levels:
-            mean = np.asarray([np.mean(arr) for arr in sparsity[hemi][s]])
-            sd = np.asarray([np.std(arr) for arr in sparsity[hemi][s]])
+            mean, sd = by_comp.mean()[s], by_comp.std()[s]
             ax.fill_between(components, mean + sd, mean - sd, linewidth=0,
                             facecolor=sparsity_styles[s][1], alpha=0.5)
             ax.plot(components, mean, color=sparsity_styles[s][0], label=s)
         # Overlay individual points for absolute threshold
-        ax.scatter(np.hstack(x), np.hstack(sparsity[hemi]['abs_005']),
-                   c=sparsity_styles['abs_005'][0])
+        ax.scatter(df.n_comp, df.abs_005, c=sparsity_styles['abs_005'][0])
         ax.set_title("Sparsity of the %s components" % (hemi))
         ax.set_xlim(xmin=components[0] - 1, xmax=components[-1] + 1)
         ax.set_xticks(components)
@@ -122,13 +118,14 @@ def image_analyses(components, dataset, memory=Memory(cachedir='nilearn_cache'),
     fh.suptitle("Hemispheric Participation Index for each component", fontsize=16)
     hpi_styles = {'pos': ['b', 'lightblue', 'above 0.005'],
                   'neg': ['r', 'lightpink', 'below -0.005']}
+    df = hemi_dfs["wb"]
+    by_comp = df.groupby("n_comp")
     for ax, sign in zip(axes, ['pos', 'neg']):
-        mean, sd = np.asarray(hpi_vals[sign]['mean']), np.asarray(hpi_vals[sign]['sd'])
+        mean, sd = by_comp.mean()["%s_hpi" % sign], by_comp.std()["%s_hpi" % sign]
         ax.fill_between(components, mean + sd, mean - sd, linewidth=0,
                         facecolor=hpi_styles[sign][1], alpha=0.5)
-        size = sparsity['wb']['%s_005' % (sign)]
-        ax.scatter(np.hstack(x), np.hstack(hpi_vals[sign]['vals']), label=sign,
-                   c=hpi_styles[sign][0], s=np.hstack(size) / 20)
+        size = df['%s_005' % (sign)]
+        ax.scatter(df.n_comp, df["%s_hpi" % sign], label=sign, c=hpi_styles[sign][0], s=size / 20)
         ax.plot(components, mean, c=hpi_styles[sign][0])
         ax.set_title("%s" % (sign))
         ax.set_xlim((0, components[-1] + 5))
@@ -141,21 +138,33 @@ def image_analyses(components, dataset, memory=Memory(cachedir='nilearn_cache'),
     out_path = op.join(out_dir, 'wb_HPI.png')
     save_and_close(out_path, fh=fh)
 
+    # Save sparsity and HPI vals for all the components
+    for hemi in images_key:
+        hemi_dfs[hemi].index.name = "idx"
+        hemi_dfs[hemi].to_csv(op.join(out_dir, "%s_summary.csv" % (hemi)))
 
-def main_ic_loop(components, scoring, dataset,
+
+def main_ic_loop(components, scoring,
+                 dataset, query_server=True, force=False,
                  memory=Memory(cachedir='nilearn_cache'), **kwargs):
     match_methods = ['wb', 'rl', 'lr']
     out_dir = op.join('ica_imgs', dataset)
     mean_scores, unmatched = [], []
+
+    # Get the data once.
+    images, term_scores = get_dataset(
+        dataset, query_server=query_server)
+
     for match in match_methods:
         print("Plotting results for %s matching method" % match)
         mean_score_d, num_unmatched_d = {}, {}
         for force_match in [False, True]:
             for c in components:
                 print("Running analysis with %d components" % c)
-                img_d, score_mats_d, sign_mats_d = main(key=match, force_match=force_match,
-                                                        n_components=c, dataset=dataset,
-                                                        scoring=scoring, **kwargs)
+                img_d, score_mats_d, sign_mats_d = do_main_analysis(
+                    dataset=dataset, images=images, term_scores=term_scores,
+                    key=match, force=force, force_match=force_match,
+                    n_components=c, scoring=scoring, **kwargs)
 
                 # Get mean dissimilarity scores and number of unmatched for each comparisons
                 # in score_mats_d

@@ -261,7 +261,7 @@ def plot_comparison_matrix(score_mat, labels, scoring, normalize=True,
             prefix, labels[0], labels[1], '-normalized' if normalize else '')))
 
 
-def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=['g', 'r', 'b'],
+def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=('g', 'r', 'b'),
                           top_n=4, bottom_n=4, standardize=True, out_dir=None):
     """
     Take the list of ica image terms and the indices of components to be compared, and
@@ -279,6 +279,8 @@ def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=['g'
         assert len(sign_list[i]) == n_comp
 
     # iterate over the ic_idx_list and sign_list for each term and plot
+    # store top n and bottom n terms for each label
+    term_arr = np.empty((len(labels), n_comp, top_n + bottom_n), dtype="S30")
     for n in range(n_comp):
 
         terms_of_interest = []
@@ -295,6 +297,7 @@ def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=['g'
                 term, idx, n_terms=bottom_n, top_bottom='bottom', sign=sign)
             combined = np.append(top_terms, bottom_terms)
             terms_of_interest.append(combined)
+            term_arr[i][n] = combined
 
             # Also store term vals (z-score if standardize) for each list
             t, vals = get_ic_terms(term, idx, sign=sign, standardize=standardize)
@@ -305,14 +308,14 @@ def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=['g'
             name += label + '[%d] ' % (idx)
 
         # Data for all the terms
-        term_df = pd.concat(term_vals, axis=1)
+        termscore_df = pd.concat(term_vals, axis=1)
 
         # Get unique terms from terms_of_interest list
         toi_unique = np.unique(terms_of_interest)
 
         # Get values for unique terms_of_interest
-        data = term_df.loc[toi_unique]
-        data = data.sort_values(labels, ascending=False)
+        data = termscore_df.loc[toi_unique]
+        data = data.sort_values(list(labels), ascending=False)
 
         # Now plot radar!
         N = len(toi_unique)
@@ -344,3 +347,14 @@ def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=['g'
             save_and_close(
                 out_path=op.join(out_dir, '%sterm_comparisons.png' % (
                     name.replace(" ", "_"))))
+
+    # Save top n and bottom n terms for each label
+    term_dfs = []
+    col_names = ["top%d" % (n + 1) for n in range(top_n)] + ["bottom%d" % (n + 1) for n in range(bottom_n)]
+    for i, label in enumerate(labels):
+        term_df = pd.DataFrame(term_arr[i], columns=["%s_%s" % (label, col) for col in col_names])
+        term_df.insert(0, "%s_idx" % (label), ic_idx_list[i])
+        term_dfs.append(term_df)
+    all_term_df = pd.concat(term_dfs, axis=1)
+    out_file = op.join(out_dir, 'term_comparison_summary.csv')
+    all_term_df.to_csv(out_file)
