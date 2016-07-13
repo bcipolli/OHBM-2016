@@ -56,17 +56,18 @@ def reorder_mat(mat, normalize=True):
 def get_match_idx_pair(score_mat, sign_mat, force=False):
     """
     This function takes a distance matrix and sign matrix and find
-    the column index with min score for each row. It returns;
-    1) matched index and 2) unmatched index, both 3D array containing
-    array[0] =row_idx, array[1] = column_idx, arr[2] = sign of col components wrt
-    row (i.e. reference) components.
+    the column index with min score for each row. It returns a summary dict for
+    matched and unmatched indices and sign flipping info;
+    e.g. match = {"idx": np.array(row_idx, column_idx), 
+                  "sign": np.array(np.ones, column_sign_flips)} 
 
-    The latter is for any column idx not used for the primary match,
-    paired with its best matching row.
+    unmatch dict contains same info for any column idx not used for the primary 
+    match, paired with its best matching reference row.
 
-    If Force = True, one-to-one matching is forced, and None is returned for
-    unmatched index array.
+    If Force = True, one-to-one matching is forced, and unmatch dict would contain None.
     """
+    match, unmatch = {}, {}
+
     if force:
         out_mat, cols, rows = reorder_mat(score_mat)
         # sort by rows
@@ -74,26 +75,30 @@ def get_match_idx_pair(score_mat, sign_mat, force=False):
         ordered_cols = cols[np.argsort(rows)]
         sign_arr = sign_mat[[ordered_rows, ordered_cols]]
 
-        matched_idx_arr = np.vstack((ordered_rows, ordered_cols, sign_arr))
-        unmatched_idx_arr = None
+        match["idx"] = np.vstack((ordered_rows, ordered_cols))
+        match["sign"] = np.vstack((np.ones(len(rows)), sign_arr))
+        unmatch["idx"], unmatch["sign"] = None, None
 
     else:
         rows = np.arange(score_mat.shape[0])
         cols = score_mat.argmin(axis=1)
         matched_signs = sign_mat[[rows, cols]]
-        matched_idx_arr = np.vstack((rows, cols, matched_signs))
-
+        
+        match["idx"] = np.vstack((rows, cols))
+        match["sign"] = np.vstack((np.ones(len(rows)), matched_signs))
+        
         unmatched_cols = np.setdiff1d(rows, cols)
-
         if unmatched_cols is not None and len(unmatched_cols) == 0:
-            unmatched_idx_arr = None
+            unmatch["idx"], unmatch["sign"] = None, None
         else:
             unmatched_msi = score_mat.argmin(axis=0)
             unmatched_rows = unmatched_msi[unmatched_cols]
             unmatched_signs = sign_mat[[unmatched_rows, unmatched_cols]]
-            unmatched_idx_arr = np.vstack((unmatched_rows, unmatched_cols, unmatched_signs))
+            
+            unmatch["idx"] = np.vstack((unmatched_rows, unmatched_cols))
+            unmatch["sign"] = np.vstack((np.ones(len(unmatched_rows)), unmatched_signs))
 
-    return matched_idx_arr, unmatched_idx_arr
+    return match, unmatch
 
 
 def get_ic_terms(terms, ic_idx, sign=1, standardize=False):

@@ -13,7 +13,7 @@ from nilearn.image import iter_img, index_img, math_img
 from nilearn.plotting import plot_stat_map
 from scipy import stats
 
-from nilearn_ext.utils import reorder_mat, get_ic_terms, get_n_terms
+from nilearn_ext.utils import reorder_mat, get_ic_terms, get_n_terms, get_match_idx_pair
 from nilearn_ext.radar import radar_factory
 
 import math
@@ -142,7 +142,7 @@ def plot_components_summary(ica_image, hemi='', out_dir=None,
 
         title = _title_from_terms(terms=ica_image.terms, ic_idx=ii, label=hemi)
 
-        colorbar = True if pi == 25 else False
+        colorbar = True if ci == 4 else False
 
         plot_stat_map(
             ic_img, axes=ax, threshold=thr, vmax=vmax, colorbar=colorbar,
@@ -154,22 +154,31 @@ def plot_components_summary(ica_image, hemi='', out_dir=None,
             save_and_close(out_path)
 
 
-def plot_component_comparisons(images, labels, idx_pair, sign_pair,
-                               out_dir=None, prefix=""):
+def plot_component_comparisons(images, labels, score_mat, sign_mat,
+                               force=False, out_dir=None):
     """
-    Uses the idx_pair to match up two images.
-    Sign_pair specifies signs of the images.
+    Uses the score_mat to match up two images. If force, one-to-one matching 
+    is forced.
+    Sign_mat is used to flip signs when comparing two images.
     """
     # Be careful
     assert len(images) == 2
     assert len(labels) == 2
     assert images[0].shape == images[1].shape
     n_components = images[0].shape[3]  # values @ 0 and 1 are the same
-    assert np.max(idx_pair) < n_components
+    assert score_mat.shape == sign_mat.shape
+    assert len(score_mat[0]) == n_components
+    
+    # Get indices for matching components
+    match, unmatch = get_match_idx_pair(score_mat, sign_mat, force=force)
+    idx_pair = match["idx"]
+    sign_pair = match["sign"]
+
+    if not force and unmatch["idx"] is not None:
+        idx_pair = np.hstack((idx_pair, unmatch["idx"]))
+        sign_pair = np.hstack((sign_pair, unmatch["sign"]))
+    
     n_comp = len(idx_pair[0])   # number of comparisons
-    assert len(idx_pair[1]) == n_comp
-    assert len(sign_pair[0]) == n_comp
-    assert len(sign_pair[1]) == n_comp
 
     # Calculate a vmax optimal across all the plots
     # get nonzero part of the image for proper thresholding of
@@ -183,8 +192,11 @@ def plot_component_comparisons(images, labels, idx_pair, sign_pair,
     for i in range(n_comp):
         c1i, c2i = idx_pair[0][i], idx_pair[1][i]
         cis = [c1i, c2i]
-
-        png_name = '%s%s_%s_%s.png' % (prefix, labels[0], labels[1], i)
+        
+        prefix = "unmatched-" if i >= n_components else ""
+        num = i-n_components if i >= n_components else i
+        png_name = '%s%s_%s_%s.png' % (prefix, labels[0], labels[1], num)
+        print "plotting %s" % png_name 
 
         comp_imgs = [index_img(img, ci) for img, ci in zip(images, cis)]
 
@@ -279,6 +291,8 @@ def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=('g'
         assert len(sign_list[i]) == n_comp
 
     # iterate over the ic_idx_list and sign_list for each term and plot
+    # store top n and bottom n terms for each label
+    term_arr = np.empty((len(labels), n_comp, top_n + bottom_n), dtype="S30")
     for n in range(n_comp):
 
         terms_of_interest = []
@@ -295,6 +309,7 @@ def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=('g'
                 term, idx, n_terms=bottom_n, top_bottom='bottom', sign=sign)
             combined = np.append(top_terms, bottom_terms)
             terms_of_interest.append(combined)
+            term_arr[i][n] = combined
 
             # Also store term vals (z-score if standardize) for each list
             t, vals = get_ic_terms(term, idx, sign=sign, standardize=standardize)
@@ -305,13 +320,13 @@ def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=('g'
             name += label + '[%d] ' % (idx)
 
         # Data for all the terms
-        term_df = pd.concat(term_vals, axis=1)
+        termscore_df = pd.concat(term_vals, axis=1)
 
         # Get unique terms from terms_of_interest list
         toi_unique = np.unique(terms_of_interest)
 
         # Get values for unique terms_of_interest
-        data = term_df.loc[toi_unique]
+        data = termscore_df.loc[toi_unique]
         data = data.sort_values(list(labels), ascending=False)
 
         # Now plot radar!
@@ -344,3 +359,14 @@ def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=('g'
             save_and_close(
                 out_path=op.join(out_dir, '%sterm_comparisons.png' % (
                     name.replace(" ", "_"))))
+
+    # Save top n and bottom n terms for each label
+    term_dfs = []
+    col_names = ["top%d" % (n + 1) for n in range(top_n)] + ["bottom%d" % (n + 1) for n in range(bottom_n)]
+    for i, label in enumerate(labels):
+        term_df = pd.DataFrame(term_arr[i], columns=["%s_%s" % (label, col) for col in col_names])
+        term_df.insert(0, "%s_idx" % (label), ic_idx_list[i])
+        term_dfs.append(term_df)
+    all_term_df = pd.concat(term_dfs, axis=1)
+    out_file = op.join(out_dir, 'term_comparison_summary.csv')
+    all_term_df.to_csv(out_file)
