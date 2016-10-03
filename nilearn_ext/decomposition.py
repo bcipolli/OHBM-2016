@@ -68,6 +68,15 @@ def generate_components(images, hemi, term_scores=None,
     fast_ica = memory.cache(fast_ica.fit)(X.T)
     ica_maps = memory.cache(fast_ica.transform)(X.T).T
 
+    # Tomoki's suggestion to normalize components_
+    # X ~ ica_maps * fast_ica.components_
+    #   = (ica_maps * f) * (fast_ica.components_ / f)
+    #   = new_ica_map * new_components_
+    C=fast_ica.components_
+    factor=np.sqrt(np.multiply(C,C).sum(axis=1,keepdims=True)) # (n_components x 1)
+    ica_maps = np.multiply(ica_maps, factor)
+    fast_ica.components_ = np.multiply(C, 1.0 / (factor + 1e-12))
+
     if term_scores is not None:
         terms = term_scores.keys()
         term_matrix = np.asarray(term_scores.values())
@@ -138,14 +147,14 @@ def compare_components(images, labels, scoring='l1norm',
                     c1_data[c1i] = masker.transform(flip_img_lr(R_img)).ravel()
                 if c2_data[c2i] is None:
                     c2_data[c2i] = masker.transform(L_img).ravel()
-                
+
             elif 'R' in labels or 'L' in labels:
                 masker = rh_masker if 'R' in labels else lh_masker
                 if c1_data[c1i] is None:
                     c1_data[c1i] = masker.transform(comp1).ravel()
                 if c2_data[c2i] is None:
                     c2_data[c2i] = masker.transform(comp2).ravel()
-                
+
             else:
                 if c1_data[c1i] is None:
                     c1_data[c1i] = comp1.get_data().ravel()
@@ -154,7 +163,7 @@ def compare_components(images, labels, scoring='l1norm',
 
             # Choose a scoring system.
             # Score should indicate DISSIMILARITY
-            # Component sign is meaningless, so try both, but keep track of 
+            # Component sign is meaningless, so try both, but keep track of
             # comparisons that had better score when flipping the sign
             score = np.inf
             for sign in [1, -1]:
