@@ -7,9 +7,9 @@ from nilearn import datasets
 
 
 def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
-                     map_types=['F map', 'T map', 'Z map'], **kwargs):
+                     map_types=['F map', 'T map', 'Z map'], collection_ids=tuple(),
+                     image_filters=tuple()):
     """Give meaningful defaults, extra computations."""
-
     # Set image filters: The filt_dict contains metadata field for the key
     # and the desired entry for each field as the value.
     # Since neurovault metadata are not always filled, it also includes any
@@ -19,7 +19,8 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
 
     def make_fun(key, val):
         return lambda img: (img.get(key) or '') in ('', val)
-    image_filters = [make_fun(key, val) for key, val in filt_dict.items()]
+    image_filters = (list(image_filters) +
+                     [make_fun(key, val) for key, val in filt_dict.items()])
 
     # Also remove bad collections
     bad_collects = [367,   # Single image w/ large uniform area value > 0
@@ -27,17 +28,23 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
                     1011,  # parcellated brains. Likely causes odd-looking
                     1013]  # ICA component
     col_ids = [-bid for bid in bad_collects]
-
-    kwargs['image_filters'] = (kwargs.get('image_filters', []) +
-                               image_filters)
-    kwargs['collection_ids'] = (kwargs.get('collection_ids', []) +
-                                col_ids)
+    collection_ids = list(collection_ids) + col_ids
 
     # Download matching images
+    def image_filter(img_metadata):
+        if img_metadata.get('collection_id') in collection_ids:
+            return False
+        for filt in image_filters:
+            if not filt(img_metadata):
+                return False
+        return True
+        #    query_server=query_server, map_types=map_types,, **kwargs)
+
     ss_all = datasets.fetch_neurovault(
-        max_images=max_images, query_server=query_server, map_types=map_types,
-        fetch_terms=fetch_terms, **kwargs)
-    images = ss_all['images']
+        mode='download_new' if query_server else 'offline',
+        max_images=max_images, image_filter=image_filter,
+        fetch_neurosynth_words=fetch_terms)
+    images = ss_all['images_meta']
 
     if not fetch_terms:
         term_scores = None
