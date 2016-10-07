@@ -55,54 +55,46 @@ def getHemiSparsity(img, hemisphere, threshold=0.000005,
     return (pos_arr, neg_arr, abs_arr)
 
 
-def analyzeWBimages(n_components, dataset, scoring,
-                    memory=Memory(cachedir='nilearn_cache')):
+def analyzeWBimages(n_component, dataset, scoring,
+                    memory=Memory(cachedir='nilearn_cache'), **kwargs):
     """
     For each wb component images, get the # of voxels above an arbitrary threshold
-    (currently hard-coded as 5e-6) to calculate HPI and SAS and return summary DF
+    (currently hard-coded as 5e-6) to calculate HPI and SAS and return summary DF.
+
     HPI(hemisphere participation index): (R-L)/(R+L) for # of voxels above the threshold
     SAS(spatial asymmetry score): dissimilarity score using the choice of scoring (l1,l2, corr)
+
+    Assumes the component image is already computed and saved.
     """
     out_dir = op.join('analysis', dataset)
     THRESH = 0.000005
 
-    # Get ICA images from ica_nii dir--assumes it ixists already
+    # Get ICA images from ica_nii dir--assumes it exists already
     print("Simply loading component images for n_component = %s" % c)
-    nii_dir = op.join('ica_nii', dataset, str(n_components))
+    nii_dir = op.join('ica_nii', dataset, str(n_component))
     img_path = op.join(nii_dir, 'wb_ica_components.nii.gz')
     wb_img = NiftiImageWithTerms.from_filename(img_path)
 
     # Store HPI and SAS vals in a DF
-    summary = pd.DataFrame({"n_comp":[n_components]*n_components})
-
-    # For calculating HPI and SAS from wb components, prepare hemisphere maskers
-    hemis = ("R", "L")
-    hemi_maskers = [HemisphereMasker(hemisphere=hemi, memory=memory).fit()
-                    for hemi in hemis]
-    hemi_vectors = [masker.transform(wb_img) for masker in hemi_maskers]
+    summary = pd.DataFrame({"n_comp":[n_component]*n_component})
 
     # 1) Get # of voxels above the given participation threshold for
     # pos and neg side, and both (abs), for each hemisphere. Use them
     # to calculate HPI: (R-L)/(R+L) for # of voxels.
+    hemis = ("R", "L")
     sparsitySigns = ("pos", "neg", "abs")
-    for sign in sparsitySigns:
-        for hemi, hemi_vector in zip(hemis, hemi_vectors):
-            if sign == "pos":
-                val = (hemi_vector > THRESH).sum(axis=1)
-            elif sign == "neg":
-                val = (hemi_vector < -THRESH).sum(axis=1)
-            elif sign == "abs":
-                val = (np.abs(hemi_vector) > THRESH).sum(axis=1)
-            summary["%s_%s" % (sign, hemi)] = val
-        summary["%sTotal" % sign] = summary["%s_R" % sign]+summary["%s_L" % sign])
+    sparsityResults = {hemi: getHemiSparsity(wb_img, hemi, memory=memory)
+                       for hemi in hemis} # {hemi: (pos_arr, neg_arr, abs_arr)}
+    for i, sign in enumerate(sparsitySigns):
+        for hemi in hemis:
+            summary["%s_%s" % (sign, hemi)] = sparsityResults[hemi][i]
+        summary["%sTotal" % sign] = summary["%s_R" % sign]+summary["%s_L" % sign]
         summary["%sHPI" % sign] = ((summary["%s_R" % sign]-summary["%s_L" % sign])
-                                  /summary["%sTotal" % sign].astype(float)
+                                  /summary["%sTotal" % sign].astype(float))
 
-    # 2) Get SAS by passing the hemi images to compare_aomponents
-    hemi_imgs = [masker.inverse_transform(vec) for masker, vec in
-                 zip(hemi_maskers, hemi_vectors)]
-
-    score_mat, sign_mat = compare_components(hemi_imgs, hemis, scoring)
+    # 2) Get SAS by passing two wb images with hemi labels to compare_aomponents
+    imgs = [wb_img] * 2
+    score_mat, sign_mat = compare_components(imgs, hemis, scoring)
     # we only care about the diagonal in score_mat (diagonal in sign_mat should all be 1)
     summary["SAS"] = score_mat.diagonal()
 
@@ -165,7 +157,8 @@ def plotWBanalysis(n_components, dataset, scoring="test", memory=Memory(cachedir
 
         # 2) Relationship between HPI and SAS
         fh, axes = plt.subplots(1, 3, sharey=True, figsize=(18, 6))
-        fh.suptitle("The relationship between HPI values and SAS", fontsize=16)
+        fh.suptitle("The relationship between HPI values and SAS: "
+                    "n_components = %d" % c, fontsize=16)
         hpi_sign_colors = {'pos': 'r', 'neg': 'b', 'abs': 'g'}
         for ax, sign in zip(axes, hpi_signs):
             ax.scatter(summary['%sHPI' % sign], summary['SAS'],
