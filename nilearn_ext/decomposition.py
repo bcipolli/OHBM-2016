@@ -111,7 +111,7 @@ def generate_components(images, hemi, term_scores=None,
     return ica_image
 
 
-def compare_components(images, labels, scoring='l1norm',
+def compare_components(images, labels, scoring='correlation', flip=True,
                        memory=Memory(cachedir='nilearn_cache')):
     assert len(images) == 2
     assert len(labels) == 2
@@ -163,10 +163,14 @@ def compare_components(images, labels, scoring='l1norm',
 
             # Choose a scoring system.
             # Score should indicate DISSIMILARITY
-            # Component sign is meaningless, so try both, but keep track of
-            # comparisons that had better score when flipping the sign
+            # Component sign is meaningless, so try both unless flip = False,
+            # and keep track of comparisons that had better score when flipping the sign
             score = np.inf
-            for sign in [1, -1]:
+            if flip:
+                signs = [1, -1]
+            else:
+                signs = [1]
+            for sign in signs:
                 c1d, c2d = c1_data[c1i], sign * c2_data[c2i]
                 if not isinstance(scoring, string_types):  # function
                     sc = scoring(c1d, c2d)
