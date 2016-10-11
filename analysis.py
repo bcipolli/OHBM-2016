@@ -35,6 +35,7 @@ from nilearn_ext.utils import get_match_idx_pair
 from nilearn_ext.decomposition import compare_components
 from sklearn.externals.joblib import Memory
 
+
 def getHemiSparsity(img, hemisphere, threshold=0.000005,
                     memory=Memory(cachedir='nilearn_cache')):
     """
@@ -57,7 +58,8 @@ def getHemiSparsity(img, hemisphere, threshold=0.000005,
 
 
 def load_or_generate_summary(images, term_scores, n_components, scoring, dataset,
-                    force=False, memory=Memory(cachedir='nilearn_cache')):
+                             force=False, sparsityThreshold=0.000005,
+                             memory=Memory(cachedir='nilearn_cache')):
     """
     For a given n_components, load summary csvs if they already exist, or
     run main.py to get and save necessary summary data required for plotting.
@@ -78,8 +80,7 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
     else:
         # Initialize summary DFs
         (wb_summary, R_sparsity, L_sparsity) = (pd.DataFrame(
-                                           {"n_comp":[n_components]*n_components}
-                                           ) for i in range(3))
+            {"n_comp": [n_components] * n_components}) for i in range(3))
         if not op.exists(out_dir):
             os.makedirs(out_dir)
 
@@ -87,9 +88,9 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
         # matching scores
         match_method = 'wb'
         img_d, score_mats_d, sign_mats_d = do_main_analysis(
-                    dataset=dataset, images=images, term_scores=term_scores,
-                    key=match_method, force=force, force_match=False,
-                    n_components=n_components, scoring=scoring, plot=False)
+            dataset=dataset, images=images, term_scores=term_scores,
+            key=match_method, force=force, force_match=False,
+            n_components=n_components, scoring=scoring, plot=False)
 
         # 1) Get sparsity for each hemisphere for "wb", "R" and "L" imgs
         hemis = ("R", "L")
@@ -100,17 +101,18 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
                       "L": (L_sparsity, ["L"])}
         for key in label_dict:
             (df, labels) = label_dict[key]
-            sparsityResults = {label: getHemiSparsity(img_d[key], label, memory=memory)
-                               for label in labels} # {label: (pos_arr, neg_arr, abs_arr)}
+            sparsityResults = {label: getHemiSparsity(img_d[key], label,
+                               threshold=sparsityThreshold, memory=memory)
+                               for label in labels}  # {label: (pos_arr, neg_arr, abs_arr)}
 
             for i, sign in enumerate(sparsitySigns):
                 for label in labels:
                     df["%s_%s" % (sign, label)] = sparsityResults[label][i]
                 # For wb only, also compute Total sparsity and HPI
                 if key == "wb":
-                    df["%sTotal" % sign] = df["%s_R" % sign]+df["%s_L" % sign]
-                    df["%sHPI" % sign] = ((df["%s_R" % sign]-df["%s_L" % sign])
-                                          /df["%sTotal" % sign].astype(float))
+                    df["%sTotal" % sign] = df["%s_R" % sign] + df["%s_L" % sign]
+                    df["%sHPI" % sign] = ((df["%s_R" % sign] - df["%s_L" % sign]) /
+                                          df["%sTotal" % sign].astype(float))
 
         # Save R/L_sparsity DFs
         R_sparsity.to_csv(op.join(out_dir, "R_sparsity.csv"))
@@ -148,8 +150,9 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
     return (wb_summary, R_sparsity, L_sparsity)
 
 
-def loop_main_and_plot(components, scoring, dataset, query_server=True, force=False,
-                 memory=Memory(cachedir='nilearn_cache'), **kwargs):
+def loop_main_and_plot(components, scoring, dataset, query_server=True,
+                       force=False, sparsityThreshold=0.000005,
+                       memory=Memory(cachedir='nilearn_cache'), **kwargs):
     """
     Loop main.py to plot summaries of WB vs hemi ICA components
     """
@@ -159,26 +162,35 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True, force=Fa
     images, term_scores = get_dataset(dataset, max_images=200,  # for testing
                                       query_server=query_server)
 
+    # Initialize master DFs
+    (wb_master, R_master, L_master) = (pd.DataFrame() for i in range(3))
+
     for c in components:
         print("Running analysis with %d components" % c)
         (wb_summary, R_sparsity, L_sparsity) = load_or_generate_summary(
-                                                images=images, term_scores=term_scores,
-                                                n_components=c, scoring=scoring,
-                                                dataset=dataset, force=force, memory=memory)
+            images=images, term_scores=term_scores, n_components=c,
+            scoring=scoring, dataset=dataset, force=force,
+            sparsityThreshold=sparsityThreshold, memory=memory)
+        # Append them to master DFs
+        wb_master = wb_master.append(wb_summary)
+        R_master = R_master.append(R_sparsity)
+        L_master = L_master.append(L_sparsity)
 
         ### Generate component-specific plots ###
         # Save component-specific images in the component dir
         comp_outdir = op.join(out_dir, str(c))
 
         # 1) Relationship between positive and negative HPI in wb components
+        out_path = op.join(comp_outdir, "1_PosNegHPI_%dcomponents.png" % c)
+
         hpi_signs = ['pos', 'neg', 'abs']
         # set color to be proportional to the symmetry in the sparsity (Pos-Neg/Abs),
         # and set size to be proportional to the total sparsity (Abs)
-        color = (wb_summary['posTotal'] - wb_summary['negTotal'])/wb_summary['absTotal']
-        size = wb_summary['absTotal']/20.0
+        color = (wb_summary['posTotal'] - wb_summary['negTotal']) / wb_summary['absTotal']
+        size = wb_summary['absTotal'] / 20.0
         ax = wb_summary.plot.scatter(x='posHPI', y='negHPI', c=color, s=size,
-                                  xlim=(-1.1,1.1), ylim=(-1.1,1.1),
-                                  colormap='Reds', colorbar=True, figsize=(7, 6))
+                                     xlim=(-1.1, 1.1), ylim=(-1.1, 1.1),
+                                     colormap='Reds', colorbar=True, figsize=(7, 6))
         title = ax.set_title("\n".join(wrap("The relationship between HPI on "
                                             "positive and negative side: "
                                             "n_components = %d" % c, 60)))
@@ -199,20 +211,21 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True, force=Fa
         cax.set_ylabel('Balance between pos/neg(anti-correlated network)',
                        rotation=270, labelpad=20)
 
-        out_path = op.join(comp_outdir, "PosNegHPI_%dcomponents.png" % c)
         save_and_close(out_path)
 
         # 2) Relationship between HPI and SAS in wb components
+        out_path = op.join(comp_outdir, "2_HPIvsSAS_%dcomponents.png" % c)
+
         fh, axes = plt.subplots(1, 3, sharey=True, figsize=(18, 6))
         fh.suptitle("The relationship between HPI values and SAS: "
                     "n_components = %d" % c, fontsize=16)
         hpi_sign_colors = {'pos': 'r', 'neg': 'b', 'abs': 'g'}
         for ax, sign in zip(axes, hpi_signs):
-            ax.scatter(wb_summary['%sHPI' % sign], wb_summary['SAS'],
-                       c=hpi_sign_colors[sign], s=totals[sign]/20)
+            ax.scatter(wb_summary['%sHPI' % sign], wb_summary['wb_SAS'],
+                       c=hpi_sign_colors[sign], s=wb_summary['%sTotal' % sign] / 20.0)
             ax.set_xlabel("%s HPI" % sign)
             ax.set_xlim(-1.1, 1.1)
-            ax.set_ylim(0,1)
+            ax.set_ylim(0, 1)
             ax.spines['right'].set_color('none')
             ax.spines['top'].set_color('none')
             ax.yaxis.set_ticks_position('left')
@@ -222,50 +235,49 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True, force=Fa
             plt.setp(ax, xticks=ticks, xticklabels=labels)
         fh.text(0.04, 0.5, "Spatial Asymmetry Score", va='center', rotation='vertical')
 
-        out_path = op.join(comp_outdir, "HPIvsSAS_%dcomponents.png" % c)
         save_and_close(out_path)
 
     ### Generate plots over a range of specified n_components ###
+    # 1) HPI-for pos, neg, and abs in wb components
+    out_path = op.join(out_dir, '1_wb_HPI.png')
 
-    # 1) HPI-for pos, neg, and abs_005 in wb components
     fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
     fh.suptitle("Hemispheric Participation Index for each component", fontsize=16)
-    hpi_styles = {'pos': ['r', 'lightpink', 'above %d' % THRESH],
-                  'neg': ['b', 'lightblue', 'below -%d' % THRESH],
-                  'abs': ['g', 'lightgreen', 'with abs value above %d' % THRESH]}
-    by_comp = master_df.groupby("n_comp")
+    hpi_styles = {'pos': ['r', 'lightpink', 'above %d' % sparsityThreshold],
+                  'neg': ['b', 'lightblue', 'below -%d' % sparsityThreshold],
+                  'abs': ['g', 'lightgreen', 'with abs value above %d' % sparsityThreshold]}
+    by_comp = wb_master.groupby("n_comp")
     for ax, sign in zip(axes, hpi_signs):
         mean, sd = by_comp.mean()["%sHPI" % sign], by_comp.std()["%sHPI" % sign]
-        ax.fill_between(n_components, mean + sd, mean - sd, linewidth=0,
+        ax.fill_between(components, mean + sd, mean - sd, linewidth=0,
                         facecolor=hpi_styles[sign][1], alpha=0.5)
-        size = master_df['%sTotal' % (sign)]/20.0
-        ax.scatter(master_df.n_comp, master_df["%sHPI" % sign], label=sign,
-                   c=hpi_styles[sign][0], s=size / 20)
-        ax.plot(n_components, mean, c=hpi_styles[sign][0])
-        ax.set_xlim((0, n_components[-1] + 5))
+        size = wb_master['%sTotal' % (sign)] / 20.0
+        ax.scatter(wb_master.n_comp, wb_master["%sHPI" % sign], label=sign,
+                   c=hpi_styles[sign][0], s=size)
+        ax.plot(components, mean, c=hpi_styles[sign][0])
+        ax.set_xlim((0, components[-1] + 5))
         ax.set_ylim((-1, 1))
-        ax.set_xticks(n_components)
+        ax.set_xticks(components)
         ax.set_ylabel("HPI((R-L)/(R+L) for # of voxels %s" % (hpi_styles[sign][2]))
     fh.text(0.5, 0.04, "# of components", ha="center")
 
-    out_path = op.join(out_dir, 'wb_HPI.png')
     save_and_close(out_path, fh=fh)
 
     # 2) SAS for wb components
     fh, ax = plt.subplots(1, 1, figsize=(18, 6))
     fh.suptitle("Spatial Asymmetry Score for each component", fontsize=16)
-    sas_mean, sas_sd = by_comp.mean()["SAS"], by_comp.std()["SAS"]
-    ax.fill_between(n_components, sas_mean + sas_sd, sas_mean - sas_sd,
+    sas_mean, sas_sd = by_comp.mean()["wb_SAS"], by_comp.std()["wb_SAS"]
+    ax.fill_between(components, sas_mean + sas_sd, sas_mean - sas_sd,
                     linewidth=0, facecolor='lightgrey', alpha=0.5)
-    size = master_df["absTotal"]/20.0
-    ax.scatter(master_df.n_comp, master_df["SAS"], c='grey', s=size)
-    ax.plot(n_components, sas_mean, c='grey')
-    ax.set_xlim((0, n_components[-1] + 5))
+    size = wb_master["absTotal"] / 20.0
+    ax.scatter(wb_master.n_comp, wb_master["wb_SAS"], c='grey', s=size)
+    ax.plot(components, sas_mean, c='grey')
+    ax.set_xlim((0, components[-1] + 5))
     ax.set_ylim((-1, 1))
-    ax.set_xticks(n_components)
+    ax.set_xticks(components)
     ax.set_ylabel("SAS (higher values indicate asymmetry)")
 
-    out_path = op.join(out_dir, 'wb_SAS.png')
+    out_path = op.join(out_dir, '2_wb_SAS.png')
     save_and_close(out_path, fh=fh)
 
 
@@ -296,7 +308,7 @@ if __name__ == '__main__':
     query_server = not args.pop('offline')
     # keys = args.pop('key1'), args.pop('key2')
     components = [int(c) for c in args.pop('components').split(',')]
-    dataset=args.pop('dataset')
+    dataset = args.pop('dataset')
 
     loop_main_and_plot(components=components, dataset=dataset,
                        query_server=query_server, **args)
