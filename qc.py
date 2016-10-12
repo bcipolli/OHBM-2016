@@ -7,6 +7,7 @@ import os.path as op
 import shutil
 
 import matplotlib.pyplot as plt
+import nibabel as nib
 import numpy as np
 import pandas as pd
 from nilearn.plotting import plot_stat_map
@@ -87,6 +88,63 @@ def qc_image_data(dataset, images, plot_dir='qc'):
         fetch_summary.to_csv(op.join(plot_dir, 'fetch_summary.csv'))
 
 
+def _dict_compare(d1, d2):
+    d1_keys = set(d1.keys())
+    d2_keys = set(d2.keys())
+    intersect_keys = d1_keys.intersection(d2_keys)
+    added = d1_keys - d2_keys
+    removed = d2_keys - d1_keys
+    modified = {o: (d1[o], d2[o]) for o in intersect_keys if d1[o] != d2[o]}
+    same = set(o for o in intersect_keys if d1[o] == d2[o])
+    return added, removed, modified, same
+
+
+def is_dict_same(d1, d2):
+    added, removed, modified, same = _dict_compare(d1, d2)
+    return len(added) == 0 and len(removed) == 0 and len(modified) == 0 and len(same) == len(d1)
+
+
+def qc_dedupe(images):
+    # map type is from the user, so not dependable.
+    keys_to_compare = [
+        'file_size', 'brain_coverage',
+        'not_mni', 'perc_bad_voxels',
+        'perc_voxels_outside']
+
+    reduced_dicts = dict()  # store as dicts for easy manual verification
+    non_dup_images = dict()
+    for image in images:
+        reduced_image = dict([(key, image.get(key))
+                              for key in keys_to_compare])
+        dup_images = [is_dict_same(reduced_image, im)
+                      for key, im in reduced_dicts.items()]
+        if np.any(dup_images):
+            # Duplicate; verify via image data.
+            dup_idx = np.where(dup_images)[0][0]
+            dup_key = reduced_dicts.keys()[dup_idx]
+            dup_image = non_dup_images[dup_key]
+
+            d1 = nib.load(dup_image['absolute_path']).get_data()
+            d1 = d1[np.logical_not(np.isnan(d1))]
+            d2 = nib.load(image['absolute_path']).get_data()
+            d2 = d2[np.logical_not(np.isnan(d2))]
+
+            if np.all(np.abs(d1 - d2) < 1E-10):
+                print "Duplicate: %s duplicates %s" % (
+                    image['id'], dup_key)
+            else:
+                print "Duplicate metadata, but not duplicate image (%s and %s). Discarding anyway." % (
+                    image['id'], dup_key)
+
+        else:
+            # print "Added image %s" % image['id']
+            reduced_dicts[image['id']] = reduced_image
+            non_dup_images[image['id']] = image
+
+    print "Kept %d of %d images" % (len(non_dup_images), len(images))
+    return non_dup_images.values()
+
+
 if __name__ == '__main__':
     import warnings
     from argparse import ArgumentParser
@@ -111,6 +169,7 @@ if __name__ == '__main__':
     if dataset == 'neurovault':
         args['fetch_terms'] = False
     images = get_dataset(query_server=query_server, dataset=dataset, **args)[0]
+    images = qc_dedupe(images)
 
     if check == 'data':
         qc_image_data(images=images, dataset=dataset)
