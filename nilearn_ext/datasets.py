@@ -8,7 +8,7 @@ from nilearn import datasets
 
 def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
                      map_types=['F map', 'T map', 'Z map'], collection_ids=tuple(),
-                     image_filters=tuple()):
+                     image_filters=tuple(), sort_images=True):
     """Give meaningful defaults, extra computations."""
     # Set image filters: The filt_dict contains metadata field for the key
     # and the desired entry for each field as the value.
@@ -65,6 +65,13 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
         for term_idx in np.argsort(total_scores)[-10:][::-1]:
             print('\t%-25s: %.2f' % (terms[term_idx], total_scores[term_idx]))
 
+    if sort_images:
+        idx = sorted(
+            range(len(images)),
+            lambda k1, k2: images[k1]['id'] - images[k2]['id'])
+        images = [images[ii] for ii in idx]
+        if term_scores:
+            term_scores = [term_scores[ti] for ti in idx]
     return images, term_scores
 
 
