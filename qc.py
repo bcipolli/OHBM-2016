@@ -5,6 +5,7 @@ what looks good and what looks like crap.
 
 import os.path as op
 import shutil
+from collections import OrderedDict
 
 import matplotlib.pyplot as plt
 import nibabel as nib
@@ -57,7 +58,8 @@ def qc_image_data(dataset, images, plot_dir='qc'):
             fh = plt.figure(figsize=(16, 10))
             print('Plot %03d of %d' % (fi + 1, np.ceil(len(images) / 16.)))
         ax = fh.add_subplot(4, 4, pi)
-        title = op.basename(im_path)
+        title = "%s%s" % (
+            '(X) ' if image['rejected'] else '', op.basename(im_path))
 
         if dataset == 'neurovault':
             fetch_summary.loc[ii] = [
@@ -150,6 +152,19 @@ def qc_dedupe(images, strict=False):
     return non_dup_images.values()
 
 
+def qc_detect_bad_images(images):
+    for image in images:
+        dat = nib.load(image['absolute_path']).get_data()
+        dat = dat[dat != 0]
+        dat = dat[np.logical_not(np.isnan(dat))]
+        reject = (dat.std() < 0.75) or (np.unique(dat).size < 1000)
+        print "%06d (%s): %.4f std, %2d unique values" % (
+            image['id'], 'REJECT' if reject else ' KEEP ',
+            dat.std(), np.unique(dat).size)
+        image['rejected'] = reject
+    return images
+
+
 if __name__ == '__main__':
     import warnings
     from argparse import ArgumentParser
@@ -175,6 +190,7 @@ if __name__ == '__main__':
         args['fetch_terms'] = False
     images = get_dataset(query_server=query_server, dataset=dataset, **args)[0]
     images = qc_dedupe(images)
+    images = qc_detect_bad_images(images)
 
     if check == 'data':
         qc_image_data(images=images, dataset=dataset)
