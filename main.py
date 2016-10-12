@@ -150,11 +150,11 @@ def get_dataset(dataset, max_images=np.inf, **kwargs):
     return images, term_scores
 
 
-def do_main_analysis(dataset, images, term_scores,
-                     key="wb", force_match=False, n_components=20,
-                     max_images=np.inf, scoring='l1norm', query_server=True,
-                     force=False, nii_dir=None, plot_dir=None, random_state=42,
-                     hemis=('wb', 'R', 'L')):
+def do_main_analysis(dataset, images, term_scores, key="wb",
+                     force_match=False, n_components=20,
+                     scoring='l1norm', query_server=True,
+                     force=False, plot=True, nii_dir=None, plot_dir=None,
+                     random_state=42, hemis=('wb', 'R', 'L')):
 
     # Output directories
     nii_dir = nii_dir or op.join('ica_nii', dataset, str(n_components))
@@ -192,11 +192,14 @@ def do_main_analysis(dataset, images, term_scores,
 
         img_pair = [imgs[comp[0]], imgs[comp[1]]]
 
-        # Compare components and plot
+        # Compare components and plot if plot = True
         # The sign_mat contains signs that gave the best score for the comparison
-        score_mat, sign_mat = compare_components_and_plot(images=img_pair, labels=comp,
+        if plot:
+            score_mat, sign_mat = compare_components_and_plot(images=img_pair, labels=comp,
                                                           scoring=scoring, force_match=force_match,
                                                           out_dir=plot_sub_dir)
+        else:
+            score_mat, sign_mat = compare_components(images=img_pair, labels=comp, scoring=scoring)
 
         # Store score_mat and sign_mat
         score_mats[comp] = score_mat
@@ -228,31 +231,35 @@ def do_main_analysis(dataset, images, term_scores,
     # Note that for wb-matching, diagnal components will be matched by definition
     comp = ('wb', 'RL')
     img_pair = [imgs['wb'], imgs['RL']]
-    score_mat, sign_mat = compare_components_and_plot(images=img_pair, labels=comp,
+    if plot:
+        score_mat, sign_mat = compare_components_and_plot(images=img_pair, labels=comp,
                                                       scoring=scoring, force_match=force_match,
                                                       out_dir=plot_sub_dir)
+    else:
+        score_mat, sign_mat = compare_components(images=img_pair, labels=comp, scoring=scoring)
 
     # Store score_mat and sign_mat
     score_mats[comp] = score_mat
     sign_mats[comp] = sign_mat
 
-    # Show term comparisons between the matched wb, R and L components
-    terms = [imgs[hemi].terms for hemi in hemis]
-    matched_idx_arr, unmatched_idx_arr = get_match_idx_pair(score_mat, sign_mat,
+    # Show term comparisons between the matched wb, R and L components if plot=True
+    if plot:
+        terms = [imgs[hemi].terms for hemi in hemis]
+        matched_idx_arr, unmatched_idx_arr = get_match_idx_pair(score_mat, sign_mat,
                                                             force=force_match)
-    # component index list for wb, R and L
-    wb_idx_arr = matched_idx_arr[0]
-    r_idx_arr = r_idx_arr[matched_idx_arr[1]]
-    l_idx_arr = l_idx_arr[matched_idx_arr[1]]
-    ic_idx_list = [wb_idx_arr, r_idx_arr, l_idx_arr]
+        # component index list for wb, R and L
+        wb_idx_arr = matched_idx_arr[0]
+        r_idx_arr = r_idx_arr[matched_idx_arr[1]]
+        l_idx_arr = l_idx_arr[matched_idx_arr[1]]
+        ic_idx_list = [wb_idx_arr, r_idx_arr, l_idx_arr]
 
-    # sign flipping list for wb, R and L
-    wb_sign_arr = np.ones(n_components)
-    r_sign_arr = matched_idx_arr[2] * r_sign_arr[matched_idx_arr[1]]
-    l_sign_arr = matched_idx_arr[2] * l_sign_arr[matched_idx_arr[1]]
-    sign_list = [wb_sign_arr, r_sign_arr, l_sign_arr]
+        # sign flipping list for wb, R and L
+        wb_sign_arr = np.ones(n_components)
+        r_sign_arr = matched_idx_arr[2] * r_sign_arr[matched_idx_arr[1]]
+        l_sign_arr = matched_idx_arr[2] * l_sign_arr[matched_idx_arr[1]]
+        sign_list = [wb_sign_arr, r_sign_arr, l_sign_arr]
 
-    plot_term_comparisons(terms, labels=hemis, ic_idx_list=ic_idx_list,
+        plot_term_comparisons(terms, labels=hemis, ic_idx_list=ic_idx_list,
                           sign_list=sign_list, color_list=['g', 'r', 'b'],
                           top_n=5, bottom_n=5, standardize=True, out_dir=plot_sub_dir)
 
@@ -260,7 +267,7 @@ def do_main_analysis(dataset, images, term_scores,
 
 
 def main(dataset, key="wb", force_match=False, n_components=20,
-         max_images=np.inf, scoring='l1norm', query_server=True,
+         max_images=np.inf, scoring='l1norm', query_server=True,plot=True,
          force=False, nii_dir=None, plot_dir=None, random_state=42):
     """
     Compute components, then run requested comparisons.
@@ -281,9 +288,9 @@ def main(dataset, key="wb", force_match=False, n_components=20,
 
     return do_main_analysis(
         dataset=dataset, images=images, term_scores=term_scores,
-        key=key, force_match=force_match,
-        n_components=n_components, scoring=scoring,
-        force=force, nii_dir=nii_dir, plot_dir=plot_dir,
+        key=key, force_match=force_match, n_components=n_components,
+        scoring=scoring, force=force, plot=plot,
+        nii_dir=nii_dir, plot_dir=plot_dir,
         random_state=random_state)
 
 
@@ -309,6 +316,7 @@ if __name__ == '__main__':
     parser.add_argument('--force_match', action='store_true', default=False)
     parser.add_argument('--force', action='store_true', default=False)
     parser.add_argument('--offline', action='store_true', default=False)
+    parser.add_argument('--no-plot', action='store_true', default=False)
     parser.add_argument('--qc', action='store_true', default=False)
     parser.add_argument('--components', nargs='?', type=int, default=20,
                         dest='n_components')
@@ -327,6 +335,7 @@ if __name__ == '__main__':
         qc_image_data(args['dataset'], query_server=query_server)
 
     # Run main
-    main(query_server=query_server, **args)
+    plot = not args.pop('no-plot')
+    main(query_server=query_server, plot=plot, **args)
 
     plt.show()
