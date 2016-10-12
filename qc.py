@@ -13,15 +13,12 @@ from nilearn.plotting import plot_stat_map
 from sklearn.externals.joblib import Memory
 
 from main import get_dataset
-from nilearn_ext.datasets import fetch_neurovault
 from nilearn_ext.image import clean_img, cast_img
 from nilearn_ext.masking import GreyMatterNiftiMasker
 from nilearn_ext.plotting import save_and_close
 
 
-def qc_image_metadata(**kwargs):
-    images = fetch_neurovault(fetch_terms=False, **kwargs)[0]
-
+def qc_image_metadata(images):
     for key in sorted(images[0].keys()):
         unique_vals = np.unique([im.get(key, 'blue') for im in images])
         print("%s (%d): " % (key, len(unique_vals)),
@@ -31,12 +28,7 @@ def qc_image_metadata(**kwargs):
         print("")
 
 
-def qc_image_data(dataset, **kwargs):
-    # Download matching images
-    kwargs['fetch_terms'] = False
-    images = get_dataset(dataset, **kwargs)[0]
-    plot_dir = 'qc'
-
+def qc_image_data(dataset, images, plot_dir='qc'):
     # Get ready
     masker = GreyMatterNiftiMasker(memory=Memory(cachedir='nilearn_cache')).fit()
     if op.exists(plot_dir):  # Delete old plots.
@@ -113,10 +105,16 @@ if __name__ == '__main__':
     args = vars(parser.parse_args())
 
     # Alias args
+    check = args.pop('check')
     query_server = not args.pop('offline')
-    if args.pop('check') == 'data':
-        qc_image_data(query_server=query_server, **args)
+    dataset = args.pop('dataset')
+    if dataset == 'neurovault':
+        args['fetch_terms'] = False
+    images = get_dataset(query_server=query_server, dataset=dataset, **args)[0]
+
+    if check == 'data':
+        qc_image_data(images=images, dataset=dataset)
     else:
-        qc_image_metadata(query_server=query_server, **args)
+        qc_image_metadata(images=images)
 
     plt.show()
