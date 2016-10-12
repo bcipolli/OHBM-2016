@@ -45,6 +45,11 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
         fetch_neurosynth_words=fetch_terms)
     images = ss_all['images_meta']
 
+    # Stamp some collection properties onto images.
+    colls = dict([(c['id'], c) for c in ss_all['collections_meta']])
+    for image in images:
+        image['DOI'] = colls.get(image['collection_id'], {}).get('DOI')
+
     if not fetch_terms:
         term_scores = None
     else:
