@@ -8,7 +8,7 @@ from nilearn import datasets
 
 def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
                      map_types=['F map', 'T map', 'Z map'], collection_ids=tuple(),
-                     image_filters=tuple()):
+                     image_filters=tuple(), sort_images=True):
     """Give meaningful defaults, extra computations."""
     # Set image filters: The filt_dict contains metadata field for the key
     # and the desired entry for each field as the value.
@@ -27,8 +27,7 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
                     1003,  # next three collections contain stat maps on
                     1011,  # parcellated brains. Likely causes odd-looking
                     1013]  # ICA component
-    col_ids = [-bid for bid in bad_collects]
-    collection_ids = list(collection_ids) + col_ids
+    collection_ids = list(collection_ids) + bad_collects
 
     # Download matching images
     def image_filter(img_metadata):
@@ -46,6 +45,11 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
         fetch_neurosynth_words=fetch_terms)
     images = ss_all['images_meta']
 
+    # Stamp some collection properties onto images.
+    colls = dict([(c['id'], c) for c in ss_all['collections_meta']])
+    for image in images:
+        image['DOI'] = colls.get(image['collection_id'], {}).get('DOI')
+
     if not fetch_terms:
         term_scores = None
     else:
@@ -61,6 +65,13 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
         for term_idx in np.argsort(total_scores)[-10:][::-1]:
             print('\t%-25s: %.2f' % (terms[term_idx], total_scores[term_idx]))
 
+    if sort_images:
+        idx = sorted(
+            range(len(images)),
+            lambda k1, k2: images[k1]['id'] - images[k2]['id'])
+        images = [images[ii] for ii in idx]
+        if term_scores:
+            term_scores = [term_scores[ti] for ti in idx]
     return images, term_scores
 
 
