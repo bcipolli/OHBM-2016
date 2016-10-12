@@ -111,8 +111,8 @@ def qc_dedupe(images, strict=False):
         'not_mni', 'perc_bad_voxels',
         'perc_voxels_outside']
 
-    reduced_dicts = dict()  # store as dicts for easy manual verification
-    non_dup_images = dict()
+    reduced_dicts = OrderedDict()  # store as dicts for easy manual verification
+    non_dup_images = OrderedDict()
     for image in images:
         reduced_image = dict([(key, image.get(key))
                               for key in keys_to_compare])
