@@ -104,7 +104,7 @@ def is_dict_same(d1, d2):
     return len(added) == 0 and len(removed) == 0 and len(modified) == 0 and len(same) == len(d1)
 
 
-def qc_dedupe(images):
+def qc_dedupe(images, strict=False):
     # map type is from the user, so not dependable.
     keys_to_compare = [
         'file_size', 'brain_coverage',
@@ -119,17 +119,22 @@ def qc_dedupe(images):
         dup_images = [is_dict_same(reduced_image, im)
                       for key, im in reduced_dicts.items()]
         if np.any(dup_images):
-            # Duplicate; verify via image data.
             dup_idx = np.where(dup_images)[0][0]
             dup_key = reduced_dicts.keys()[dup_idx]
             dup_image = non_dup_images[dup_key]
 
-            d1 = nib.load(dup_image['absolute_path']).get_data()
-            d1 = d1[np.logical_not(np.isnan(d1))]
-            d2 = nib.load(image['absolute_path']).get_data()
-            d2 = d2[np.logical_not(np.isnan(d2))]
+            if not strict:
+                hard_reject = True
+            else:
+                # Duplicate; verify via image data.
+                d1 = nib.load(dup_image['absolute_path']).get_data()
+                d1 = d1[np.logical_not(np.isnan(d1))]
+                d2 = nib.load(image['absolute_path']).get_data()
+                d2 = d2[np.logical_not(np.isnan(d2))]
 
-            if np.all(np.abs(d1 - d2) < 1E-10):
+                hard_reject = np.all(np.abs(d1 - d2) < 1E-10)
+
+            if hard_reject:
                 print "Duplicate: %s duplicates %s" % (
                     image['id'], dup_key)
             else:
