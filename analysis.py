@@ -30,7 +30,7 @@ from textwrap import wrap
 from main import do_main_analysis, get_dataset
 from nibabel_ext import NiftiImageWithTerms
 from nilearn_ext.masking import HemisphereMasker
-from nilearn_ext.plotting import save_and_close
+from nilearn_ext.plotting import save_and_close, rescale
 from nilearn_ext.utils import get_match_idx_pair
 from nilearn_ext.decomposition import compare_components
 from sklearn.externals.joblib import Memory
@@ -159,9 +159,10 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     out_dir = op.join('ica_imgs', dataset, 'analyses')
 
     # Get the data once.
-    images, term_scores = get_dataset(dataset, max_images=200,  # for testing
-                                      query_server=query_server)
-
+    # images, term_scores = get_dataset(dataset, max_images=200,
+    #                                   query_server=query_server)
+    images = None  # for testing
+    term_scores = None
     # Initialize master DFs
     (wb_master, R_master, L_master) = (pd.DataFrame() for i in range(3))
 
@@ -187,9 +188,9 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         # set color to be proportional to the symmetry in the sparsity (Pos-Neg/Abs),
         # and set size to be proportional to the total sparsity (Abs)
         color = (wb_summary['posTotal'] - wb_summary['negTotal']) / wb_summary['absTotal']
-        size = wb_summary['absTotal'] / 20.0
+        size = rescale(wb_summary['absTotal'])
         ax = wb_summary.plot.scatter(x='posHPI', y='negHPI', c=color, s=size,
-                                     xlim=(-1.1, 1.1), ylim=(-1.1, 1.1),
+                                     xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), edgecolors="grey",
                                      colormap='Reds', colorbar=True, figsize=(7, 6))
         title = ax.set_title("\n".join(wrap("The relationship between HPI on "
                                             "positive and negative side: "
@@ -221,8 +222,9 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
                     "n_components = %d" % c, fontsize=16)
         hpi_sign_colors = {'pos': 'r', 'neg': 'b', 'abs': 'g'}
         for ax, sign in zip(axes, hpi_signs):
+            size = rescale(wb_summary['%sTotal' % sign]) * 2
             ax.scatter(wb_summary['%sHPI' % sign], wb_summary['wb_SAS'],
-                       c=hpi_sign_colors[sign], s=wb_summary['%sTotal' % sign] / 20.0)
+                       c=hpi_sign_colors[sign], s=size, edgecolors="grey")
             ax.set_xlabel("%s HPI" % sign)
             ax.set_xlim(-1.1, 1.1)
             ax.set_ylim(0, 1)
@@ -251,9 +253,9 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         mean, sd = by_comp.mean()["%sHPI" % sign], by_comp.std()["%sHPI" % sign]
         ax.fill_between(components, mean + sd, mean - sd, linewidth=0,
                         facecolor=hpi_styles[sign][1], alpha=0.5)
-        size = wb_master['%sTotal' % (sign)] / 20.0
+        size = rescale(wb_master['%sTotal' % (sign)])
         ax.scatter(wb_master.n_comp, wb_master["%sHPI" % sign], label=sign,
-                   c=hpi_styles[sign][0], s=size)
+                   c=hpi_styles[sign][0], s=size, edgecolors="grey")
         ax.plot(components, mean, c=hpi_styles[sign][0])
         ax.set_xlim((0, components[-1] + 5))
         ax.set_ylim((-1, 1))
@@ -269,8 +271,8 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     sas_mean, sas_sd = by_comp.mean()["wb_SAS"], by_comp.std()["wb_SAS"]
     ax.fill_between(components, sas_mean + sas_sd, sas_mean - sas_sd,
                     linewidth=0, facecolor='lightgrey', alpha=0.5)
-    size = wb_master["absTotal"] / 20.0
-    ax.scatter(wb_master.n_comp, wb_master["wb_SAS"], c='grey', s=size)
+    size = rescale(wb_master["absTotal"])
+    ax.scatter(wb_master.n_comp, wb_master["wb_SAS"], c='grey', s=size, edgecolors="black")
     ax.plot(components, sas_mean, c='grey')
     ax.set_xlim((0, components[-1] + 5))
     ax.set_ylim((-1, 1))
