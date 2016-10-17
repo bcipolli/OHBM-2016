@@ -147,7 +147,7 @@ def image_analyses(components, dataset, memory=Memory(cachedir='nilearn_cache'),
 def main_ic_loop(components, scoring,
                  dataset, query_server=True, force=False,
                  memory=Memory(cachedir='nilearn_cache'), **kwargs):
-    # Test with just 'wb' and 'rl' matching until 'lr' matching is fixed
+    # $FIX Test with just 'wb' and 'rl' matching until 'lr' matching is fixed
     # match_methods = ['wb', 'rl', 'lr']
     match_methods = ['wb', 'rl']
     out_dir = op.join('ica_imgs', dataset)
@@ -192,8 +192,8 @@ def main_ic_loop(components, scoring,
                         mean_score_d[score_label].append(mean_score)
                         if "-unforced" in comp[1]:
                             num_unmatched_d[um_label].append(n_unmatched)
-                
-                # For ("wb", "R"), ("wb", "L") --wb matching or ("R", "L") --rl matching 
+
+                # For ("wb", "R"), ("wb", "L") --wb matching or ("R", "L") --rl matching
                 else:
                     for force_match in [True, False]:
                         match, unmatch = get_match_idx_pair(score_mat, sign_mat, force=force_match)

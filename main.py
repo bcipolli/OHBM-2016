@@ -291,7 +291,6 @@ if __name__ == '__main__':
     parser.add_argument('--skip_plot', action='store_true', default=False)
     parser.add_argument('--force', action='store_true', default=False)
     parser.add_argument('--offline', action='store_true', default=False)
-    parser.add_argument('--no-plot', action='store_true', default=False)
     parser.add_argument('--qc', action='store_true', default=False)
     parser.add_argument('--components', nargs='?', type=int, default=20,
                         dest='n_components')

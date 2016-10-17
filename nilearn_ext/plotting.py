@@ -142,7 +142,7 @@ def plot_components_summary(ica_image, hemi='', out_dir=None,
 
         title = _title_from_terms(terms=ica_image.terms, ic_idx=ii, label=hemi)
 
-        colorbar = True if ci == 4 else False
+        colorbar = ci == 4
 
         plot_stat_map(
             ic_img, axes=ax, threshold=thr, vmax=vmax, colorbar=colorbar,
@@ -157,7 +157,7 @@ def plot_components_summary(ica_image, hemi='', out_dir=None,
 def plot_component_comparisons(images, labels, score_mat, sign_mat,
                                force=False, out_dir=None):
     """
-    Uses the score_mat to match up two images. If force, one-to-one matching 
+    Uses the score_mat to match up two images. If force, one-to-one matching
     is forced.
     Sign_mat is used to flip signs when comparing two images.
     """
@@ -168,7 +168,7 @@ def plot_component_comparisons(images, labels, score_mat, sign_mat,
     n_components = images[0].shape[3]  # values @ 0 and 1 are the same
     assert score_mat.shape == sign_mat.shape
     assert len(score_mat[0]) == n_components
-    
+
     # Get indices for matching components
     match, unmatch = get_match_idx_pair(score_mat, sign_mat, force=force)
     idx_pair = match["idx"]
@@ -177,7 +177,7 @@ def plot_component_comparisons(images, labels, score_mat, sign_mat,
     if not force and unmatch["idx"] is not None:
         idx_pair = np.hstack((idx_pair, unmatch["idx"]))
         sign_pair = np.hstack((sign_pair, unmatch["sign"]))
-    
+
     n_comp = len(idx_pair[0])   # number of comparisons
 
     # Calculate a vmax optimal across all the plots
@@ -192,11 +192,11 @@ def plot_component_comparisons(images, labels, score_mat, sign_mat,
     for i in range(n_comp):
         c1i, c2i = idx_pair[0][i], idx_pair[1][i]
         cis = [c1i, c2i]
-        
+
         prefix = "unmatched-" if i >= n_components else ""
         num = i-n_components if i >= n_components else i
         png_name = '%s%s_%s_%s.png' % (prefix, labels[0], labels[1], num)
-        print "plotting %s" % png_name 
+        print "plotting %s" % png_name
 
         comp_imgs = [index_img(img, ci) for img, ci in zip(images, cis)]
 
