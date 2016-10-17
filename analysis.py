@@ -24,7 +24,7 @@ import os.path as op
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import re
+import seaborn as sns
 from textwrap import wrap
 
 from main import do_main_analysis, get_dataset
@@ -143,6 +143,8 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
             matched_scores = score_mat[matched[0], matched[1]]
             wb_summary["match%s_score" % comparison[1]] = matched_scores
+            num_unmatched = unmatched.shape[1] if unmatched is not None else 0
+            wb_summary["n_unmatched%s" % comparison[1]] = num_unmatched
 
             # Save wb_summary
             wb_summary.to_csv(op.join(out_dir, "wb_summary.csv"))
@@ -184,7 +186,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         # 1) Relationship between positive and negative HPI in wb components
         out_path = op.join(comp_outdir, "1_PosNegHPI_%dcomponents.png" % c)
 
-        hpi_signs = ['pos', 'neg', 'abs']
+        sparsity_signs = ['pos', 'neg', 'abs']
         # set color to be proportional to the symmetry in the sparsity (Pos-Neg/Abs),
         # and set size to be proportional to the total sparsity (Abs)
         color = (wb_summary['posTotal'] - wb_summary['negTotal']) / wb_summary['absTotal']
@@ -221,7 +223,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         fh.suptitle("The relationship between HPI values and SAS: "
                     "n_components = %d" % c, fontsize=16)
         hpi_sign_colors = {'pos': 'r', 'neg': 'b', 'abs': 'g'}
-        for ax, sign in zip(axes, hpi_signs):
+        for ax, sign in zip(axes, sparsity_signs):
             size = rescale(wb_summary['%sTotal' % sign]) * 2
             ax.scatter(wb_summary['%sHPI' % sign], wb_summary['wb_SAS'],
                        c=hpi_sign_colors[sign], s=size, edgecolors="grey")
@@ -240,6 +242,11 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         save_and_close(out_path)
 
     ### Generate plots over a range of specified n_components ###
+    # Save master DFs
+    wb_master.to_csv(op.join(out_dir, 'wb_master_summary.csv'))
+    R_master.to_csv(op.join(out_dir, 'R_sparsity_summary.csv'))
+    L_master.to_csv(op.join(out_dir, 'L_sparsity_summary.csv'))
+
     # 1) HPI-for pos, neg, and abs in wb components
     out_path = op.join(out_dir, '1_wb_HPI.png')
 
@@ -249,7 +256,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
                   'neg': ['b', 'lightblue', 'below -%d' % sparsityThreshold],
                   'abs': ['g', 'lightgreen', 'with abs value above %d' % sparsityThreshold]}
     by_comp = wb_master.groupby("n_comp")
-    for ax, sign in zip(axes, hpi_signs):
+    for ax, sign in zip(axes, sparsity_signs):
         mean, sd = by_comp.mean()["%sHPI" % sign], by_comp.std()["%sHPI" % sign]
         ax.fill_between(components, mean + sd, mean - sd, linewidth=0,
                         facecolor=hpi_styles[sign][1], alpha=0.5)
@@ -265,21 +272,75 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
 
     save_and_close(out_path, fh=fh)
 
-    # 2) SAS for wb components
-    fh, ax = plt.subplots(1, 1, figsize=(18, 6))
-    fh.suptitle("Spatial Asymmetry Score for each component", fontsize=16)
-    sas_mean, sas_sd = by_comp.mean()["wb_SAS"], by_comp.std()["wb_SAS"]
-    ax.fill_between(components, sas_mean + sas_sd, sas_mean - sas_sd,
-                    linewidth=0, facecolor='lightgrey', alpha=0.5)
-    size = rescale(wb_master["absTotal"])
-    ax.scatter(wb_master.n_comp, wb_master["wb_SAS"], c='grey', s=size, edgecolors="black")
-    ax.plot(components, sas_mean, c='grey')
-    ax.set_xlim((0, components[-1] + 5))
-    ax.set_ylim((-1, 1))
-    ax.set_xticks(components)
-    ax.set_ylabel("SAS (higher values indicate asymmetry)")
+    # 2) Sparsity comparison between wb and hemi components
+    for hemi, hemi_df in zip(("R", "L"), (R_master, L_master)):
+        out_path = op.join(out_dir, '2_Sparsity_comparison_%s.png' % hemi)
+        # Prepare summary of sparsity for each hemisphere
+        wb_sparsity = wb_master[hemi_df.columns]
+        wb_sparsity["decomposition_type"] = "wb"
+        hemi_df["decomposition_type"] = hemi
+        sparsity_summary = wb_sparsity.append(hemi_df)
 
-    out_path = op.join(out_dir, '2_wb_SAS.png')
+        # Plot
+        fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
+        fh.suptitle("Sparsity of each component: Comparison of WB and "
+                    "%s-only decomposition" % hemi, fontsize=16)
+        for ax, sign in zip(axes, sparsity_signs):
+            sns.boxplot(x="n_comp", y="%s_%s" % (sign, hemi), ax=ax,
+                        hue="decomposition_type", data=sparsity_summary)
+            ax.set_title("%s" % sign)
+        fh.text(0.04, 0.5, "Sparsity values", va='center', rotation='vertical')
+
+        save_and_close(out_path, fh=fh)
+
+    # 3) Matching results: average matching scores and proportion of unmatched
+    out_path = op.join(out_dir, '3_Matching_results_box.png')
+
+    score_cols = ["matchR_score", "matchL_score", "matchRL_score"]
+    match_scores = pd.melt(wb_master[["n_comp"] + score_cols], id_vars="n_comp",
+                           value_vars=score_cols)
+
+    fh = plt.figure(figsize=(10, 6))
+    plt.title("Matching scores for the best-matched pairs")
+    ax = sns.boxplot(x="n_comp", y="value", hue="variable", data=match_scores)
+    ax.set(xlabel="Number of components", ylabel="Matching score using %s" % scoring)
+
+    save_and_close(out_path, fh=fh)
+
+    # Same data but in line plot: also add proportion of unmatched
+    out_path = op.join(out_dir, '3_Matching_results_line.png')
+
+    unmatch_cols = ["n_unmatchedR", "n_unmatchedL"]
+    unmatched = pd.melt(wb_master[["n_comp"] + unmatch_cols], id_vars="n_comp",
+                        value_vars=unmatch_cols)
+    unmatched["proportion"] = unmatched.value / unmatched.n_comp.astype(float)
+
+    fh = plt.figure(figsize=(10, 6))
+    plt.title("Matching scores for the best-matched pairs")
+    ax = sns.pointplot(x="n_comp", y="value", hue="variable",
+                       data=match_scores, dodge=0.3)
+    # sns.stripplot(x="n_comp", y="value", hue="variable", data=match_scores, ax=ax)
+    sns.pointplot(x="n_comp", y="proportion", hue="variable",
+                  data=unmatched, dodge=0.3, ax=ax, linestyles="--")
+    ax.set(xlabel="Number of components", ylabel="Matching score using %s" % scoring)
+    fh.text(0.95, 0.5, "Proportion of unmatched R- or L- components", va="center", rotation=-90)
+
+    save_and_close(out_path, fh=fh)
+
+    # 4) SAS for wb components and matched RL components
+    out_path = op.join(out_dir, '4_wb_RL_SAS_box.png')
+
+    sas_cols = ["wb_SAS", "matchedRL_SAS"]
+    sas = pd.melt(wb_master[["n_comp"] + sas_cols], id_vars="n_comp",
+                  value_vars=sas_cols)
+
+    fh = plt.figure(figsize=(10, 6))
+    plt.title("Spatial Asymmetry Score for WB and the matched RL components")
+    ax = sns.boxplot(x="n_comp", y="value", hue="variable", data=sas)
+    ylabel = "\n".join(wrap("Spatial Asymmetry Score using %s "
+                            "(higher values indicate asymmetry)" % scoring))
+    ax.set(xlabel="Number of components", ylabel=ylabel)
+
     save_and_close(out_path, fh=fh)
 
 
