@@ -93,13 +93,11 @@ def compare_components_and_plot(images, labels, scoring, force_match=False, out_
     # The sign_mat contains signs that gave the best score for the comparison
     score_mat, sign_mat = compare_components(images, labels, scoring)
 
-    n_components = score_mat.shape[0]
-
     # Plot comparison matrix
     for normalize in [False, True]:
         plot_comparison_matrix(
             score_mat, labels, scoring, normalize=normalize, out_dir=out_dir)
-    
+
     return score_mat, sign_mat
 
 
@@ -112,13 +110,13 @@ def get_dataset(dataset, max_images=np.inf, **kwargs):
     elif dataset == 'abide':
         dataset = datasets.fetch_abide_pcp(
             n_subjects=min(94, max_images), **kwargs)
-        images = [{'local_path': p} for p in dataset['func_preproc']]
+        images = [{'absolute_path': p} for p in dataset['func_preproc']]
         term_scores = None
 
     elif dataset == 'nyu':
         dataset = datasets.fetch_nyu_rest(
             n_subjects=min(25, max_images), **kwargs)
-        images = [{'local_path': p} for p in dataset['func']]
+        images = [{'absolute_path': p} for p in dataset['func']]
         term_scores = None
 
     else:
@@ -127,8 +125,8 @@ def get_dataset(dataset, max_images=np.inf, **kwargs):
 
 
 def do_main_analysis(dataset, images, term_scores, key="wb", n_components=20,
-                     plot=True, max_images=np.inf, scoring='l1norm', 
-                     query_server=True, force=False, nii_dir=None, 
+                     plot=True, max_images=np.inf, scoring='l1norm',
+                     query_server=True, force=False, nii_dir=None,
                      plot_dir=None, random_state=42, hemis=('wb', 'R', 'L')):
 
     # Output directories
@@ -142,7 +140,7 @@ def do_main_analysis(dataset, images, term_scores, key="wb", n_components=20,
     imgs = {}
 
     # Load or generate components
-    kwargs = dict(images=[im['local_path'] for im in images],
+    kwargs = dict(images=[im['absolute_path'] for im in images],
                   n_components=n_components, term_scores=term_scores,
                   out_dir=nii_dir, plot_dir=plot_dir)
     for hemi in hemis:
@@ -176,30 +174,30 @@ def do_main_analysis(dataset, images, term_scores, key="wb", n_components=20,
         # Store score_mat and sign_mat
         score_mats[comp] = score_mat
         sign_mats[comp] = sign_mat
-        
+
         # Get indices for matching up components for both forced and unforced one-to-one matching
         for force_match in [True, False]:
             force_status = 'forced' if force_match else 'unforced'
             plot_sub_dir = op.join(plot_dir, '%s-match' % force_status)
             match, unmatch = get_match_idx_pair(score_mat, sign_mat, force=force_match)
-            
-            # Store R and L indices/signs to match up R and L 
+
+            # Store R and L indices/signs to match up R and L
             for i, hem in enumerate(comp):
                 if hem in ['R', 'L']:
                     RL_arr[(force_status, hem, "idx")] = match["idx"][i]
                     RL_arr[(force_status, hem, "sign")] = match["sign"][i]
-            
+
             # If plot=True, plot matched (and unmatched, if unforced matching) components
             if plot:
-                plot_component_comparisons(images=img_pair, labels=comp, 
-                                           score_mat=score_mat, sign_mat=sign_mat, 
+                plot_component_comparisons(images=img_pair, labels=comp,
+                                           score_mat=score_mat, sign_mat=sign_mat,
                                            force=force_match, out_dir=plot_sub_dir)
-                           
-    #3) Now match up R and L (forced vs unforced match)
+
+    # 3) Now match up R and L (forced vs unforced match)
     for force_match in [True, False]:
         force_status = 'forced' if force_match else 'unforced'
         plot_sub_dir = op.join(plot_dir, '%s-match' % force_status)
-    
+
         rl_idx_pair = (RL_arr[(force_status, "R", "idx")], RL_arr[(force_status, "L", "idx")])
         rl_sign_pair = (RL_arr[(force_status, "R", "sign")], RL_arr[(force_status, "L", "sign")])
         imgs['RL-%s' % force_status] = concat_RL(R_img=imgs['R'], L_img=imgs['L'],
@@ -208,7 +206,7 @@ def do_main_analysis(dataset, images, term_scores, key="wb", n_components=20,
 
         # 4) Compare the concatenated image to bilateral components (ie wb vs RL)
         # Note that for wb-matching, diagnal components will be matched by definition
-        comp = ('wb', 'RL-%s'% force_status)
+        comp = ('wb', 'RL-%s' % force_status)
         img_pair = [imgs[comp[0]], imgs[comp[1]]]
         score_mat, sign_mat = compare_components_and_plot(images=img_pair, labels=comp,
                                                           scoring=scoring, out_dir=plot_sub_dir)
@@ -222,11 +220,11 @@ def do_main_analysis(dataset, images, term_scores, key="wb", n_components=20,
             plot_component_comparisons(images=img_pair, labels=comp,
                                        score_mat=score_mat, sign_mat=sign_mat,
                                        force=force_match, out_dir=plot_sub_dir)
-        
+
             # Show term comparisons between the matched wb, R and L components
             match, unmatch = get_match_idx_pair(score_mat, sign_mat, force=force_match)
             terms = [imgs[hemi].terms for hemi in hemis]
-        
+
             # component index list for wb, R and L
             wb_idx_arr = match["idx"][0]
             r_idx_arr, l_idx_arr = [arr[match["idx"][1]] for arr in rl_idx_pair]
@@ -236,7 +234,7 @@ def do_main_analysis(dataset, images, term_scores, key="wb", n_components=20,
             wb_sign_arr = match["sign"][0]
             r_sign_arr, l_sign_arr = [match["sign"][1] * arr[match["idx"][1]] for arr in rl_sign_pair]
             sign_list = [wb_sign_arr, r_sign_arr, l_sign_arr]
-    
+
             plot_term_comparisons(terms, labels=hemis, ic_idx_list=ic_idx_list,
                                   sign_list=sign_list, color_list=['g', 'r', 'b'],
                                   top_n=5, bottom_n=5, standardize=True, out_dir=plot_sub_dir)
@@ -293,6 +291,7 @@ if __name__ == '__main__':
     parser.add_argument('--skip_plot', action='store_true', default=False)
     parser.add_argument('--force', action='store_true', default=False)
     parser.add_argument('--offline', action='store_true', default=False)
+    parser.add_argument('--no-plot', action='store_true', default=False)
     parser.add_argument('--qc', action='store_true', default=False)
     parser.add_argument('--components', nargs='?', type=int, default=20,
                         dest='n_components')
@@ -311,7 +310,7 @@ if __name__ == '__main__':
         qc_image_data(args['dataset'], query_server=query_server)
 
     # Run main
-    plot = not args.pop('skip_plot') 
+    plot = not args.pop('skip_plot')
     main(query_server=query_server, plot=plot, **args)
 
     plt.show()
