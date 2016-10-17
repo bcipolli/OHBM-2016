@@ -27,8 +27,7 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
                     1003,  # next three collections contain stat maps on
                     1011,  # parcellated brains. Likely causes odd-looking
                     1013]  # ICA component
-    col_ids = [-bid for bid in bad_collects]
-    collection_ids = list(collection_ids) + col_ids
+    collection_ids = list(collection_ids) + bad_collects
 
     # Download matching images
     def image_filter(img_metadata):
@@ -45,6 +44,11 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
         max_images=max_images, image_filter=image_filter,
         fetch_neurosynth_words=fetch_terms)
     images = ss_all['images_meta']
+
+    # Stamp some collection properties onto images.
+    colls = dict([(c['id'], c) for c in ss_all['collections_meta']])
+    for image in images:
+        image['DOI'] = colls.get(image['collection_id'], {}).get('DOI')
 
     if not fetch_terms:
         term_scores = None
