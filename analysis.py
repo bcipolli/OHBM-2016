@@ -242,10 +242,12 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         save_and_close(out_path)
 
     ### Generate plots over a range of specified n_components ###
-    # Save master DFs
-    wb_master.to_csv(op.join(out_dir, 'wb_master_summary.csv'))
-    R_master.to_csv(op.join(out_dir, 'R_sparsity_summary.csv'))
-    L_master.to_csv(op.join(out_dir, 'L_sparsity_summary.csv'))
+    # Reset indices of master DFs and save
+    master_DFs = {"wb_master": wb_master, "R_sparsity": R_master,
+                  "L_sparsity": L_master}
+    for key in master_DFs:
+        master_DFs[key].reset_index(inplace=True)
+        master_DFs[key].to_csv(op.join(out_dir, '%s_summary.csv' % key))
 
     # 1) HPI-for pos, neg, and abs in wb components
     out_path = op.join(out_dir, '1_wb_HPI.png')
@@ -338,11 +340,44 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     plt.title("Spatial Asymmetry Score for WB and the matched RL components")
     ax = sns.boxplot(x="n_comp", y="value", hue="variable", data=sas)
     ylabel = "\n".join(wrap("Spatial Asymmetry Score using %s "
-                            "(higher values indicate asymmetry)" % scoring))
+                            "(higher values indicate asymmetry)" % scoring, 50))
     ax.set(xlabel="Number of components", ylabel=ylabel)
 
     save_and_close(out_path, fh=fh)
 
+    # Same data but with paired dots and lines
+    out_path = op.join(out_dir, '4_wb_RL_SAS_dots.png')
+
+    fh = plt.figure(figsize=(10, 6))
+    plt.title("Spatial Asymmetry Score for WB and the matched RL components")
+    # first plot lines between individual plots
+    for i in range(len(wb_master.index)):
+        linestyle = "-" if (wb_master.wb_SAS[i] - wb_master.matchedRL_SAS[i]) > 0 else "--"
+        plt.plot([wb_master.n_comp.astype(int)[i] - 1, wb_master.n_comp.astype(int)[i] + 1],
+                 [wb_master.wb_SAS[i], wb_master.matchedRL_SAS[i]],
+                 c="grey", linestyle=linestyle, linewidth=1.0)
+
+    # add scatter points
+    colors = sns.color_palette("Spectral")
+    plt.scatter(wb_master.n_comp.astype(int) - 1, wb_master.wb_SAS,
+                c=colors[1], label="WB")
+    plt.scatter(wb_master.n_comp.astype(int) + 1, wb_master.matchedRL_SAS,
+                c=colors[4], label="matched RL")
+    plt.legend()
+
+    # add mean change
+    by_comp = wb_master.groupby("n_comp")
+    for c, grouped in by_comp:
+        linestyle = "-" if (grouped.wb_SAS.mean() - grouped.matchedRL_SAS.mean()) > 0 else "--"
+        plt.plot([int(c) - 1, int(c) + 1], [grouped.wb_SAS.mean(), grouped.matchedRL_SAS.mean()],
+                 c="black", linestyle=linestyle)
+    comp_arr = np.asarray(map(int, components))
+    plt.scatter(comp_arr - 1, by_comp.wb_SAS.mean(), c=colors[0], s=80, marker="+")
+    plt.scatter(comp_arr + 1, by_comp.matchedRL_SAS.mean(), c=colors[5], s=80, marker="+")
+    plt.xlabel("Number of components")
+    plt.ylabel(ylabel)
+
+    save_and_close(out_path, fh=fh)
 
 if __name__ == '__main__':
     import warnings
