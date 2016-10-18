@@ -147,7 +147,9 @@ def image_analyses(components, dataset, memory=Memory(cachedir='nilearn_cache'),
 def main_ic_loop(components, scoring,
                  dataset, query_server=True, force=False,
                  memory=Memory(cachedir='nilearn_cache'), **kwargs):
-    match_methods = ['wb', 'rl', 'lr']
+    # $FIX Test with just 'wb' and 'rl' matching until 'lr' matching is fixed
+    # match_methods = ['wb', 'rl', 'lr']
+    match_methods = ['wb', 'rl']
     out_dir = op.join('ica_imgs', dataset)
     mean_scores, unmatched = [], []
 
@@ -155,33 +157,63 @@ def main_ic_loop(components, scoring,
     images, term_scores = get_dataset(
         dataset, query_server=query_server)
 
-    for match in match_methods:
-        print("Plotting results for %s matching method" % match)
+    for match_method in match_methods:
+        print("Plotting results for %s matching method" % match_method)
         mean_score_d, num_unmatched_d = {}, {}
-        for force_match in [False, True]:
-            for c in components:
-                print("Running analysis with %d components" % c)
-                img_d, score_mats_d, sign_mats_d = do_main_analysis(
+        for c in components:
+            print("Running analysis with %d components" % c)
+            # main analysis is run for each component and match method:
+            # plotting for component comparisons are done only if force=True
+            img_d, score_mats_d, sign_mats_d = do_main_analysis(
                     dataset=dataset, images=images, term_scores=term_scores,
-                    key=match, force=force, force_match=force_match,
+                    key=match_method, force=force, plot=force,
                     n_components=c, scoring=scoring, **kwargs)
 
-                # Get mean dissimilarity scores and number of unmatched for each comparisons
-                # in score_mats_d
-                for comp in score_mats_d:
-                    score_mat, sign_mat = score_mats_d[comp], sign_mats_d[comp]
-                    mia, uma = get_match_idx_pair(score_mat, sign_mat)
-                    mean_score = score_mat[[mia[0], mia[1]]].mean()
-                    n_unmatched = uma.shape[1] if uma is not None else 0
+            # Get mean dissimilarity scores and number of unmatched for each comparisons
+            # in score_mats_d
+            for comp in score_mats_d:
+                score_mat, sign_mat = score_mats_d[comp], sign_mats_d[comp]
+                # For ("wb", "RL-forced") and ("wb", "RL-unforced")
+                if "forced" in comp[1]:
+                    if "-forced" in comp[1]:
+                        match, unmatch = get_match_idx_pair(score_mat, sign_mat, force=True)
+                    elif "-unforced" in comp[1]:
+                        match, unmatch = get_match_idx_pair(score_mat, sign_mat, force=False)
+                        n_unmatched = unmatch["idx"].shape[1] if unmatch["idx"] is not None else 0
+                        um_label = "unmatched RL"
+                    mean_score = score_mat[[match["idx"][0], match["idx"][1]]].mean()
+                    score_label = "%s" % (" vs ".join(comp))
                     # Store values in respective dict
-                    score_label = "%s%s" % (" vs ".join(comp), "-forced" if force_match else "")
-                    um_label = "unmatched %s%s" % (comp[1], "-forced" if force_match else "")
                     if c == components[0]:
                         mean_score_d[score_label] = [mean_score]
-                        num_unmatched_d[um_label] = [n_unmatched]
+                        if "-unforced" in comp[1]:
+                            num_unmatched_d[um_label] = [n_unmatched]
                     else:
                         mean_score_d[score_label].append(mean_score)
-                        num_unmatched_d[um_label].append(n_unmatched)
+                        if "-unforced" in comp[1]:
+                            num_unmatched_d[um_label].append(n_unmatched)
+
+                # For ("wb", "R"), ("wb", "L") --wb matching or ("R", "L") --rl matching
+                else:
+                    for force_match in [True, False]:
+                        match, unmatch = get_match_idx_pair(score_mat, sign_mat, force=force_match)
+                        mean_score = score_mat[[match["idx"][0], match["idx"][1]]].mean()
+                        if force_match:
+                            score_label = "%s%s" % (" vs ".join(comp), "-forced")
+                            n_unmatched = None
+                        else:
+                            score_label = "%s%s" % (" vs ".join(comp), "-unforced")
+                            n_unmatched = unmatch["idx"].shape[1] if unmatch["idx"] is not None else 0
+                            um_label = "unmatched %s" % comp[1]
+                        # Store values in respective dict
+                        if c == components[0]:
+                            mean_score_d[score_label] = [mean_score]
+                            if not force_match:
+                                num_unmatched_d[um_label] = [n_unmatched]
+                        else:
+                            mean_score_d[score_label].append(mean_score)
+                            if not force_match:
+                                num_unmatched_d[um_label].append(n_unmatched)
 
         # Store vals as df
         ms_df = pd.DataFrame(mean_score_d, index=components)
@@ -190,18 +222,19 @@ def main_ic_loop(components, scoring,
         unmatched.append(um_df)
         # Save combined df
         combined = pd.concat([ms_df, um_df], axis=1)
-        out = op.join(out_dir, '%s-matching_simscores.csv' % match)
+        out = op.join(out_dir, '%s-matching_simscores.csv' % match_method)
         combined.to_csv(out)
 
     # We have all the scores for the matching method; now plot.
-    fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
+    fh, axes = plt.subplots(1, len(match_methods), sharex=True, sharey=True, figsize=(18, 6))
     fh.suptitle("Average dissimilarity scores for the best-match pairs", fontsize=16)
-    labels = ["wb vs R", "wb vs L", "R vs L", "L vs R", "wb vs RL",
-              "wb vs R-forced", "wb vs L-forced", "R vs L-forced", "L vs R-forced", "wb vs RL-forced",
+    labels = ["wb vs R-unforced", "wb vs L-unforced", "R vs L-unforced", "wb vs RL-unforced",
+              "wb vs R-forced", "wb vs L-forced", "R vs L-forced", "wb vs RL-forced",
               "unmatched R", "unmatched L", "unmatched RL"]
-    styles = ["r-", "b-", "m-", "m-", "g-",
-              "r:", "b:", "m:", "m:", "g:",
+    styles = ["r-", "b-", "m-", "g-",
+              "r:", "b:", "m:", "g:",
               "r--", "b--", "m--"]
+
     for i, ax in enumerate(axes):
         ax2 = ax.twinx()
         ms_df, um_df = mean_scores[i], unmatched[i]
@@ -210,11 +243,14 @@ def main_ic_loop(components, scoring,
                 ms_df[label].plot(ax=ax, style=style)
             elif label in um_df.columns:
                 um_df[label].plot(ax=ax2, style=style)
-        ax.legend()
         ax.set_title("%s-matching" % (match_methods[i]))
-        ax2.set_ylim(ymax=(um_df.values.max() + 9) // 10 * 10)
-        ax2.legend(loc=4)
-        ax2.set_ylabel("# of unmatched R- or L- components")
+        # Shrink current axis by 30%
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, box.width * 0.75, box.height])
+        ax2.set_position([box.x0, box.y0, box.width * 0.75, box.height])
+        # Put the legends to the right of the current axis
+        ax.legend(loc='lower left', bbox_to_anchor=(1.3, 0.5))
+        ax2.legend(loc='upper left', bbox_to_anchor=(1.3, 0.5))
     fh.text(0.5, 0.04, "# of components", ha="center")
     fh.text(0.05, 0.5, "mean %s scores" % scoring, va='center', rotation='vertical')
     fh.text(0.95, 0.5, "# of unmatched R- or L- components", va='center', rotation=-90)

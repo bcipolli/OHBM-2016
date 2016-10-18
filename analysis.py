@@ -89,8 +89,8 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
         match_method = 'wb'
         img_d, score_mats_d, sign_mats_d = do_main_analysis(
             dataset=dataset, images=images, term_scores=term_scores,
-            key=match_method, force=force, force_match=False,
-            n_components=n_components, scoring=scoring, plot=False)
+            key=match_method, force=force, plot=False,
+            n_components=n_components, scoring=scoring)
 
         # 1) Get sparsity for each hemisphere for "wb", "R" and "L" imgs
         hemis = ("R", "L")
