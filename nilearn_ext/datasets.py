@@ -103,7 +103,10 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
 
     def make_fun(key, val):
         return lambda img: (img.get(key) or '') in ('', val)
-    image_filters = (list(image_filters) +
+    image_filters = list(image_filters) + [
+        lambda img: (img.get('map_type') or '') in map_types
+    ]
+    image_filters = (image_filters +
                      [make_fun(key, val) for key, val in filt_dict.items()])
 
     # Also remove bad collections
