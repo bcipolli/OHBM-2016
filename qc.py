@@ -5,10 +5,8 @@ what looks good and what looks like crap.
 
 import os.path as op
 import shutil
-from collections import OrderedDict
 
 import matplotlib.pyplot as plt
-import nibabel as nib
 import numpy as np
 import pandas as pd
 from nilearn.plotting import plot_stat_map
@@ -101,70 +99,6 @@ def _dict_compare(d1, d2):
     return added, removed, modified, same
 
 
-def is_dict_same(d1, d2):
-    added, removed, modified, same = _dict_compare(d1, d2)
-    return len(added) == 0 and len(removed) == 0 and len(modified) == 0 and len(same) == len(d1)
-
-
-def qc_dedupe(images, strict=False):
-    # map type is from the user, so not dependable.
-    keys_to_compare = [
-        'file_size', 'brain_coverage',
-        'not_mni', 'perc_bad_voxels',
-        'perc_voxels_outside']
-
-    reduced_dicts = OrderedDict()  # store as dicts for easy manual verification
-    non_dup_images = OrderedDict()
-    for image in images:
-        reduced_image = dict([(key, image.get(key))
-                              for key in keys_to_compare])
-        dup_images = [is_dict_same(reduced_image, im)
-                      for key, im in reduced_dicts.items()]
-        if np.any(dup_images):
-            dup_idx = np.where(dup_images)[0][0]
-            dup_key = reduced_dicts.keys()[dup_idx]
-            dup_image = non_dup_images[dup_key]
-
-            if not strict:
-                hard_reject = True
-            else:
-                # Duplicate; verify via image data.
-                d1 = nib.load(dup_image['absolute_path']).get_data()
-                d1 = d1[np.logical_not(np.isnan(d1))]
-                d2 = nib.load(image['absolute_path']).get_data()
-                d2 = d2[np.logical_not(np.isnan(d2))]
-
-                hard_reject = np.all(np.abs(d1 - d2) < 1E-10)
-
-            if hard_reject:
-                print "Duplicate: %s duplicates %s" % (
-                    image['id'], dup_key)
-            else:
-                print "Duplicate metadata, but not duplicate image (%s and %s). Discarding anyway." % (
-                    image['id'], dup_key)
-
-        else:
-            # print "Added image %s" % image['id']
-            reduced_dicts[image['id']] = reduced_image
-            non_dup_images[image['id']] = image
-
-    print "Kept %d of %d images" % (len(non_dup_images), len(images))
-    return non_dup_images.values()
-
-
-def qc_detect_bad_images(images):
-    for image in images:
-        dat = nib.load(image['absolute_path']).get_data()
-        dat = dat[dat != 0]
-        dat = dat[np.logical_not(np.isnan(dat))]
-        reject = (dat.std() < 0.75) or (np.unique(dat).size < 1000)
-        print "%06d (%s): %.4f std, %2d unique values" % (
-            image['id'], 'REJECT' if reject else ' KEEP ',
-            dat.std(), np.unique(dat).size)
-        image['rejected'] = reject
-    return images
-
-
 if __name__ == '__main__':
     import warnings
     from argparse import ArgumentParser
@@ -189,8 +123,6 @@ if __name__ == '__main__':
     if dataset == 'neurovault':
         args['fetch_terms'] = False
     images = get_dataset(query_server=query_server, dataset=dataset, **args)[0]
-    images = qc_dedupe(images)
-    images = qc_detect_bad_images(images)
 
     if check == 'data':
         qc_image_data(images=images, dataset=dataset)
