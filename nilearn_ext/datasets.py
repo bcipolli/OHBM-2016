@@ -74,6 +74,9 @@ def _neurovault_dedupe(images, strict=False, verbose=False):
 
 
 def _neurovault_remove_bad_images(images, verbose=False):
+    """Bad images are:
+    * Images that only have positive or negative values.
+    """
     print "Searching for bad data across %d images..." % len(images)
     good_images = []
     for image in images:
