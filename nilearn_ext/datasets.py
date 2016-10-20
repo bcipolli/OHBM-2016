@@ -116,7 +116,9 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
     bad_collects = [367,   # Single image w/ large uniform area value > 0
                     1003,  # next three collections contain stat maps on
                     1011,  # parcellated brains. Likely causes odd-looking
-                    1013]  # ICA component
+                    1013,  # ICA component
+                    1071,  # Added Oct2016-strange-looking images
+                    1889]  # Added Oct2016-extreme vals on edge
     collection_ids = list(collection_ids) + bad_collects
 
     # Download matching images
