@@ -76,13 +76,14 @@ def _neurovault_dedupe(images, strict=False, verbose=False):
 def _neurovault_remove_bad_images(images, verbose=False):
     """Bad images are:
     * Images that only have positive or negative values.
+    * Also remove those with <2000 unique vals (for parcellated stat maps)
     """
     print "Searching for bad data across %d images..." % len(images)
     good_images = []
     for image in images:
         dat = nib.load(image['absolute_path']).get_data()
         dat = dat[dat != 0]
-        image['rejected'] = np.all(dat > 0) or np.all(dat < 0)
+        image['rejected'] = np.all(dat > 0) or np.all(dat < 0) or (np.unique(dat).size < 2000)
         if not image['rejected']:
             good_images.append(image)
         elif verbose:
