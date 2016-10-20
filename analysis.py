@@ -5,12 +5,18 @@
 How symmetric are the whole-brain ICA components? How are they similar to
 half-brain ICA components?
 
-Calculate the HPI (Hemisphere Participation Index) and the SAS (spatial
-asymmetry score: dissimilarity score between R and L) for each whole-brain ICA
-component images to show the relationship between the two.
+For both WB and hal-brain components, find the sparsity, measured as L1 norm
+and also as voxel count above a threshold, to compare whether they differ.
+Sharper contrast (increase in vc-sparsity) in half-brain ICA indicate masking
+of lateralized organization in WB.
+
+To analyze symmetry of WB components, Calculate;
+1) HPAI (Hemisphere Participation Asymmetry Index)
+2) SAS (spatial asymmetry score: dissimilarity score between R and L)
+for each WB ICA component image to show the relationship between the two.
 
 Then for each component, find the best-matching half-brain R&L components,
-compare the SAS between them to see how much it increases relative to the
+compare the SAS between them to see how much it  (increases relative to the
 whole-brain SAS. Also compare terms associated with whole-brain and matching
 half-brain components.
 
@@ -23,11 +29,12 @@ import os.path as op
 
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy import stats
 import pandas as pd
 import seaborn as sns
 from textwrap import wrap
 
-from main import do_main_analysis, get_dataset
+from main import do_main_analysis, get_dataset, load_or_generate_components
 from nibabel_ext import NiftiImageWithTerms
 from nilearn_ext.masking import HemisphereMasker
 from nilearn_ext.plotting import save_and_close, rescale
@@ -36,25 +43,50 @@ from nilearn_ext.decomposition import compare_components
 from sklearn.externals.joblib import Memory
 
 
+def getSparsityThreshold(components, percentile=90, force=False):
+    """
+    Use WB component images for the given list of components to get the specified
+    percentile value of the absolute values across images.
+    """
+    imgs = []
+    for c in components:
+        wb_img = load_or_generate_components(hemi="wb", force=force)
+        imgs.append(wb_img.get_data())
+    dat = np.vstack(imgs)
+    nonzero_dat = dat[np.nonzero(dat)]
+    thr = stats.scoreatpercentile(np.abs(nonzero_dat), percentile)
+
+    return thr
+
+
 def getHemiSparsity(img, hemisphere, threshold=0.000005,
                     memory=Memory(cachedir='nilearn_cache')):
     """
-    Calculate sparsity of the image for the given hemisphere. Sparsity here is
-    defined as the # of voxels above a given threshold, and will be calculated
-    for positive and negative side of the activation, as well as the both side.
+    Calculate sparsity of the image for the given hemisphere.
+    Sparsity is calculated using 1) l1norm ("l1") value of the image, and
+    2) voxel count ("vc") for # of voxels above the given threshold.
+
+    The vc method is calculated separately for pos, neg side of the image
+    and for absolute values, to detect any anti-correlated netowrks.
+
     It assumes the values of the img is normalized.
-    Returns (pos_arr, neg_arr, abs_arr), with each array containing integer
-    values and with the length of the img.
+
+    Returns a dict containing arrays for l1, vc-pos, vc-neg, vc-abs, each
+    1-vector array with the length (n_component) of the img.
+    The dict also contains n_voxels for the given hemi.
     """
     # Transform img to vector for the specified hemisphere
     hemi_masker = HemisphereMasker(hemisphere=hemisphere, memory=memory).fit()
     hemi_vector = hemi_masker.transform(img)
 
-    pos_arr = (hemi_vector > threshold).sum(axis=1)
-    neg_arr = (hemi_vector < -threshold).sum(axis=1)
-    abs_arr = (np.abs(hemi_vector) > threshold).sum(axis=1)
+    sparsity_dict = {}
+    sparsity_dict["l1"] = np.linalg.norm(hemi_vector, axis=1, ord=1)
+    sparsity_dict["vc-pos"] = (hemi_vector > threshold).sum(axis=1)
+    sparsity_dict["vc-neg"] = (hemi_vector < threshold).sum(axis=1)
+    sparsity_dict["vc-abs"] = (np.abs(hemi_vector) > threshold).sum(axis=1)
+    sparsity_dict["n_voxels"] = hemi_vector.shape[1]
 
-    return (pos_arr, neg_arr, abs_arr)
+    return sparsity_dict
 
 
 def load_or_generate_summary(images, term_scores, n_components, scoring, dataset,
@@ -89,12 +121,12 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
         match_method = 'wb'
         img_d, score_mats_d, sign_mats_d = do_main_analysis(
             dataset=dataset, images=images, term_scores=term_scores,
-            key=match_method, force=force, plot=False,
+            key=match_method, force=False, plot=force,
             n_components=n_components, scoring=scoring)
 
         # 1) Get sparsity for each hemisphere for "wb", "R" and "L" imgs
         hemis = ("R", "L")
-        sparsitySigns = ("pos", "neg", "abs")
+        sparsityTypes = ("l1", "vc-pos", "vc-neg", "vc-abs")
         # Dict of DF and labels used to get and store Sparsity results
         label_dict = {"wb": (wb_summary, hemis),
                       "R": (R_sparsity, ["R"]),
@@ -105,14 +137,22 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
                                threshold=sparsityThreshold, memory=memory)
                                for label in labels}  # {label: (pos_arr, neg_arr, abs_arr)}
 
-            for i, sign in enumerate(sparsitySigns):
+            for i, s_type in enumerate(sparsityTypes):
                 for label in labels:
-                    df["%s_%s" % (sign, label)] = sparsityResults[label][i]
-                # For wb only, also compute Total sparsity and HPI
+                    df["%s_%s" % (s_type, label)] = sparsityResults[label][s_type]
+                # For wb only, also compute Total (both hemi) sparsity and HPAI
                 if key == "wb":
-                    df["%sTotal" % sign] = df["%s_R" % sign] + df["%s_L" % sign]
-                    df["%sHPI" % sign] = ((df["%s_R" % sign] - df["%s_L" % sign]) /
-                                          df["%sTotal" % sign].astype(float))
+                    df["%sTotal" % s_type] = df["%s_R" % s_type] + df["%s_L" % s_type]
+                    # Calculate HPAI using vc-sparsity
+                    if "vc" in s_type:
+                        # Get n_voxels in each hemi to adjust for the differences in
+                        # n_voxels in each hemi when calculating HPAI
+                        n_voxelsR = sparsityResults["R"]["n_voxels"]
+                        n_voxelsL = sparsityResults["L"]["n_voxels"]
+                        n_voxelsB = n_voxelsR + n_voxelsL
+                        df["%sHPAI" % s_type] = (((df["%s_R" % s_type] / n_voxelsR)
+                                                 - (df["%s_L" % s_type] / n_voxelsL))
+                                                 / (df["%sTotal" % s_type] / n_voxelsB))
 
         # Save R/L_sparsity DFs
         R_sparsity.to_csv(op.join(out_dir, "R_sparsity.csv"))
@@ -120,7 +160,7 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
         # 2) Get SAS of wb component images as well as matched RL images by passing
         # 2 x wb or RL images and hemi labels to the compare_components (make sure
-        # not to flip when comparing R and L)
+        # not to flip signs when comparing R and L)
         name_img_pairs = [("wb_SAS", img_d["wb"]),
                           ("matchedRL_SAS", img_d["RL"])]
         for (name, img) in name_img_pairs:
@@ -168,6 +208,10 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     # Initialize master DFs
     (wb_master, R_master, L_master) = (pd.DataFrame() for i in range(3))
 
+    # Determine threshold to use for voxel count sparsity based on WB ICA images
+    sparsityThreshold = getSparsityThreshold(components=components, percentile=90,
+                                             force=force)
+
     for c in components:
         print("Running analysis with %d components" % c)
         (wb_summary, R_sparsity, L_sparsity) = load_or_generate_summary(
@@ -183,18 +227,19 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         # Save component-specific images in the component dir
         comp_outdir = op.join(out_dir, str(c))
 
-        # 1) Relationship between positive and negative HPI in wb components
-        out_path = op.join(comp_outdir, "1_PosNegHPI_%dcomponents.png" % c)
+        # 1) Relationship between positive and negative HPAI in wb components
+        out_path = op.join(comp_outdir, "1_PosNegHPAI_%dcomponents.png" % c)
 
         sparsity_signs = ['pos', 'neg', 'abs']
-        # set color to be proportional to the symmetry in the sparsity (Pos-Neg/Abs),
-        # and set size to be proportional to the total sparsity (Abs)
-        color = (wb_summary['posTotal'] - wb_summary['negTotal']) / wb_summary['absTotal']
-        size = rescale(wb_summary['absTotal'])
-        ax = wb_summary.plot.scatter(x='posHPI', y='negHPI', c=color, s=size,
+        # set color to be proportional to the symmetry in the vc-sparsity (Pos-Neg/Abs),
+        # and set size to be proportional to the total vc-sparsity (Abs)
+        color = ((wb_summary['vc-posTotal'] - wb_summary['vc-negTotal'])
+                 / wb_summary['vc-absTotal'])
+        size = rescale(wb_summary['vc-absTotal'])
+        ax = wb_summary.plot.scatter(x='vc-posHPAI', y='vc-negHPAI', c=color, s=size,
                                      xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), edgecolors="grey",
-                                     colormap='Reds', colorbar=True, figsize=(7, 6))
-        title = ax.set_title("\n".join(wrap("The relationship between HPI on "
+                                     colormap='PuRd', colorbar=True, figsize=(7, 6))
+        title = ax.set_title("\n".join(wrap("The relationship between HPAI on "
                                             "positive and negative side: "
                                             "n_components = %d" % c, 60)))
         ax.spines['right'].set_color('none')
@@ -216,18 +261,18 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
 
         save_and_close(out_path)
 
-        # 2) Relationship between HPI and SAS in wb components
-        out_path = op.join(comp_outdir, "2_HPIvsSAS_%dcomponents.png" % c)
+        # 2) Relationship between HPAI and SAS in wb components
+        out_path = op.join(comp_outdir, "2_HPAIvsSAS_%dcomponents.png" % c)
 
         fh, axes = plt.subplots(1, 3, sharey=True, figsize=(18, 6))
-        fh.suptitle("The relationship between HPI values and SAS: "
+        fh.suptitle("The relationship between HPAI values and SAS: "
                     "n_components = %d" % c, fontsize=16)
-        hpi_sign_colors = {'pos': 'r', 'neg': 'b', 'abs': 'g'}
+        hpai_sign_colors = {'pos': 'r', 'neg': 'b', 'abs': 'g'}
         for ax, sign in zip(axes, sparsity_signs):
-            size = rescale(wb_summary['%sTotal' % sign]) * 2
-            ax.scatter(wb_summary['%sHPI' % sign], wb_summary['wb_SAS'],
-                       c=hpi_sign_colors[sign], s=size, edgecolors="grey")
-            ax.set_xlabel("%s HPI" % sign)
+            size = rescale(wb_summary['vc-%sTotal' % sign]) * 2
+            ax.scatter(wb_summary['vc-%sHPAI' % sign], wb_summary['wb_SAS'],
+                       c=hpai_sign_colors[sign], s=size, edgecolors="grey")
+            ax.set_xlabel("%s HPAI" % sign)
             ax.set_xlim(-1.1, 1.1)
             ax.set_ylim(0, 1)
             ax.spines['right'].set_color('none')
@@ -249,54 +294,70 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         master_DFs[key].reset_index(inplace=True)
         master_DFs[key].to_csv(op.join(out_dir, '%s_summary.csv' % key))
 
-    # 1) HPI-for pos, neg, and abs in wb components
-    out_path = op.join(out_dir, '1_wb_HPI.png')
+    # 1) HPAI-for pos, neg, and abs in wb components
+    out_path = op.join(out_dir, '1_wb_HPAI.png')
 
     fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
     fh.suptitle("Hemispheric Participation Index for each component", fontsize=16)
-    hpi_styles = {'pos': ['r', 'lightpink', 'above %d' % sparsityThreshold],
-                  'neg': ['b', 'lightblue', 'below -%d' % sparsityThreshold],
-                  'abs': ['g', 'lightgreen', 'with abs value above %d' % sparsityThreshold]}
+    hpai_styles = {'pos': ['r', 'lightpink', 'above %d' % sparsityThreshold],
+                   'neg': ['b', 'lightblue', 'below -%d' % sparsityThreshold],
+                   'abs': ['g', 'lightgreen', 'with abs value above %d' % sparsityThreshold]}
     by_comp = wb_master.groupby("n_comp")
     for ax, sign in zip(axes, sparsity_signs):
-        mean, sd = by_comp.mean()["%sHPI" % sign], by_comp.std()["%sHPI" % sign]
+        mean, sd = by_comp.mean()["vc-%sHPAI" % sign], by_comp.std()["vc-%sHPAI" % sign]
         ax.fill_between(components, mean + sd, mean - sd, linewidth=0,
-                        facecolor=hpi_styles[sign][1], alpha=0.5)
-        size = rescale(wb_master['%sTotal' % (sign)])
-        ax.scatter(wb_master.n_comp, wb_master["%sHPI" % sign], label=sign,
-                   c=hpi_styles[sign][0], s=size, edgecolors="grey")
-        ax.plot(components, mean, c=hpi_styles[sign][0])
+                        facecolor=hpai_styles[sign][1], alpha=0.5)
+        size = rescale(wb_master['vc-%sTotal' % (sign)])
+        ax.scatter(wb_master.n_comp, wb_master["vc-%sHPAI" % sign], label=sign,
+                   c=hpai_styles[sign][0], s=size, edgecolors="grey")
+        ax.plot(components, mean, c=hpai_styles[sign][0])
         ax.set_xlim((0, components[-1] + 5))
         ax.set_ylim((-1, 1))
         ax.set_xticks(components)
-        ax.set_ylabel("HPI((R-L)/(R+L) for # of voxels %s" % (hpi_styles[sign][2]))
-    fh.text(0.5, 0.04, "# of components", ha="center")
+        ax.set_ylabel("HPAI((R-L)/(R+L) for # of voxels %s" % (hpai_styles[sign][2]))
+    fh.text(0.5, 0.04, "Number of components", ha="center")
 
     save_and_close(out_path, fh=fh)
 
-    # 2) Sparsity comparison between wb and hemi components
+    # 2) VC and 3) L1 Sparsity comparison between wb and hemi components
     for hemi, hemi_df in zip(("R", "L"), (R_master, L_master)):
-        out_path = op.join(out_dir, '2_Sparsity_comparison_%s.png' % hemi)
         # Prepare summary of sparsity for each hemisphere
         wb_sparsity = wb_master[hemi_df.columns]
         wb_sparsity["decomposition_type"] = "wb"
         hemi_df["decomposition_type"] = hemi
         sparsity_summary = wb_sparsity.append(hemi_df)
 
-        # Plot
+        # First plot voxel count sparsity
+        out_path = op.join(out_dir, '2_vcSparsity_comparison_%s.png' % hemi)
+
         fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
-        fh.suptitle("Sparsity of each component: Comparison of WB and "
-                    "%s-only decomposition" % hemi, fontsize=16)
+        fh.suptitle("Voxel Count Sparsity of each component: Comparison of WB "
+                    "and %s-only decomposition" % hemi, fontsize=16)
         for ax, sign in zip(axes, sparsity_signs):
-            sns.boxplot(x="n_comp", y="%s_%s" % (sign, hemi), ax=ax,
+            sns.boxplot(x="n_comp", y="vc-%s_%s" % (sign, hemi), ax=ax,
                         hue="decomposition_type", data=sparsity_summary)
             ax.set_title("%s" % sign)
-        fh.text(0.04, 0.5, "Sparsity values", va='center', rotation='vertical')
+        fh.text(0.04, 0.5, "Voxel Count Sparsity values", va='center',
+                rotation='vertical')
+        fh.text(0.5, 0.04, "Number of components", ha="center")
+
+        save_and_close(out_path, fh=fh)
+
+        # Next L1 norm sparsity
+        out_path = op.join(out_dir, '3_l1Sparsity_comparison_%s.png' % hemi)
+
+        fh, ax = plt.subplot(1, 1, figsize=(10, 6))
+        fh.title("L1 Sparsity of each component: Comparison of WB "
+                 "and %s-only decomposition" % hemi, fontsize=16)
+        sns.boxplot(x="n_comp", y="l1_%s" % hemi, ax=ax,
+                    hue="decomposition_type", data=sparsity_summary)
+        ax.set_xlabel("Number of components")
+        ax.set_ylabel("L1 sparsity values")
 
         save_and_close(out_path, fh=fh)
 
     # 3) Matching results: average matching scores and proportion of unmatched
-    out_path = op.join(out_dir, '3_Matching_results_box.png')
+    out_path = op.join(out_dir, '4_Matching_results_box.png')
 
     score_cols = ["matchR_score", "matchL_score", "matchRL_score"]
     match_scores = pd.melt(wb_master[["n_comp"] + score_cols], id_vars="n_comp",
@@ -310,7 +371,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     save_and_close(out_path, fh=fh)
 
     # Same data but in line plot: also add proportion of unmatched
-    out_path = op.join(out_dir, '3_Matching_results_line.png')
+    out_path = op.join(out_dir, '4_Matching_results_line.png')
 
     unmatch_cols = ["n_unmatchedR", "n_unmatchedL"]
     unmatched = pd.melt(wb_master[["n_comp"] + unmatch_cols], id_vars="n_comp",
@@ -330,7 +391,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     save_and_close(out_path, fh=fh)
 
     # 4) SAS for wb components and matched RL components
-    out_path = op.join(out_dir, '4_wb_RL_SAS_box.png')
+    out_path = op.join(out_dir, '5_wb_RL_SAS_box.png')
 
     sas_cols = ["wb_SAS", "matchedRL_SAS"]
     sas = pd.melt(wb_master[["n_comp"] + sas_cols], id_vars="n_comp",
@@ -346,7 +407,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     save_and_close(out_path, fh=fh)
 
     # Same data but with paired dots and lines
-    out_path = op.join(out_dir, '4_wb_RL_SAS_dots.png')
+    out_path = op.join(out_dir, '5_wb_RL_SAS_dots.png')
 
     fh = plt.figure(figsize=(10, 6))
     plt.title("Spatial Asymmetry Score for WB and the matched RL components")
@@ -378,6 +439,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     plt.ylabel(ylabel)
 
     save_and_close(out_path, fh=fh)
+
 
 if __name__ == '__main__':
     import warnings
