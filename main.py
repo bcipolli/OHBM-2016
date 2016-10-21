@@ -259,6 +259,7 @@ def main(dataset, key="wb", n_components=20, plot=True,
     For forced one-to-one matching,, this is identical as rl.
 
     """
+
     images, term_scores = get_dataset(dataset, max_images=max_images,
                                       query_server=query_server)
 
@@ -300,6 +301,7 @@ if __name__ == '__main__':
                         dest='random_state')
     parser.add_argument('--scoring', nargs='?', default='l1norm',
                         choices=['l1norm', 'l2norm', 'correlation'])
+    parser.add_argument('--max_images', nargs='?', type=int, default=np.inf)
     args = vars(parser.parse_args())
 
     # Run qc

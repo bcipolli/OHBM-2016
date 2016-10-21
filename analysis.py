@@ -193,18 +193,16 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
 
 def loop_main_and_plot(components, scoring, dataset, query_server=True,
-                       force=False, sparsityThreshold=0.000005,
+                       force=False, sparsityThreshold=0.000005, max_images=np.inf,
                        memory=Memory(cachedir='nilearn_cache'), **kwargs):
     """
     Loop main.py to plot summaries of WB vs hemi ICA components
     """
     out_dir = op.join('ica_imgs', dataset, 'analyses')
 
-    # Get the data once.
-    # images, term_scores = get_dataset(dataset, max_images=200,
-    #                                   query_server=query_server)
-    images = None  # for testing
-    term_scores = None
+    images, term_scores = get_dataset(dataset, max_images=max_images,
+                                      query_server=query_server)
+
     # Initialize master DFs
     (wb_master, R_master, L_master) = (pd.DataFrame() for i in range(3))
 
@@ -462,6 +460,7 @@ if __name__ == '__main__':
                         dest='random_state')
     parser.add_argument('--scoring', nargs='?', default='correlation',
                         choices=['l1norm', 'l2norm', 'correlation'])
+    parser.add_argument('--max_images', nargs='?', type=int, default=np.inf)
     args = vars(parser.parse_args())
 
     # Alias args
