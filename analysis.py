@@ -35,7 +35,6 @@ import seaborn as sns
 from textwrap import wrap
 
 from main import do_main_analysis, get_dataset, load_or_generate_components
-from nibabel_ext import NiftiImageWithTerms
 from nilearn_ext.masking import HemisphereMasker
 from nilearn_ext.plotting import save_and_close, rescale
 from nilearn_ext.utils import get_match_idx_pair
@@ -43,7 +42,7 @@ from nilearn_ext.decomposition import compare_components
 from sklearn.externals.joblib import Memory
 
 
-def getSparsityThreshold(components, percentile=90, force=False):
+def get_sparsity_threshold(components, percentile=90, force=False):
     """
     Use WB component images for the given list of components to get the specified
     percentile value of the absolute values across images.
@@ -59,8 +58,8 @@ def getSparsityThreshold(components, percentile=90, force=False):
     return thr
 
 
-def getHemiSparsity(img, hemisphere, threshold=0.000005,
-                    memory=Memory(cachedir='nilearn_cache')):
+def get_hemi_sparsity(img, hemisphere, threshold=0.000005,
+                      memory=Memory(cachedir='nilearn_cache')):
     """
     Calculate sparsity of the image for the given hemisphere.
     Sparsity is calculated using 1) l1norm ("l1") value of the image, and
@@ -90,7 +89,7 @@ def getHemiSparsity(img, hemisphere, threshold=0.000005,
 
 
 def load_or_generate_summary(images, term_scores, n_components, scoring, dataset,
-                             force=False, sparsityThreshold=0.000005,
+                             force=False, sparsity_threshold=0.000005,
                              memory=Memory(cachedir='nilearn_cache')):
     """
     For a given n_components, load summary csvs if they already exist, or
@@ -133,13 +132,13 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
                       "L": (L_sparsity, ["L"])}
         for key in label_dict:
             (df, labels) = label_dict[key]
-            sparsityResults = {label: getHemiSparsity(img_d[key], label,
-                               threshold=sparsityThreshold, memory=memory)
-                               for label in labels}  # {label: (pos_arr, neg_arr, abs_arr)}
+            sparsity_results = {label: get_hemi_sparsity(img_d[key], label,
+                                threshold=sparsity_threshold, memory=memory)
+                                for label in labels}  # {label: (pos_arr, neg_arr, abs_arr)}
 
             for i, s_type in enumerate(sparsityTypes):
                 for label in labels:
-                    df["%s_%s" % (s_type, label)] = sparsityResults[label][s_type]
+                    df["%s_%s" % (s_type, label)] = sparsity_results[label][s_type]
                 # For wb only, also compute Total (both hemi) sparsity and HPAI
                 if key == "wb":
                     df["%sTotal" % s_type] = df["%s_R" % s_type] + df["%s_L" % s_type]
@@ -147,8 +146,8 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
                     if "vc" in s_type:
                         # Get n_voxels in each hemi to adjust for the differences in
                         # n_voxels in each hemi when calculating HPAI
-                        n_voxelsR = sparsityResults["R"]["n_voxels"]
-                        n_voxelsL = sparsityResults["L"]["n_voxels"]
+                        n_voxelsR = sparsity_results["R"]["n_voxels"]
+                        n_voxelsL = sparsity_results["L"]["n_voxels"]
                         n_voxelsB = n_voxelsR + n_voxelsL
                         df["%sHPAI" % s_type] = (((df["%s_R" % s_type] / n_voxelsR)
                                                  - (df["%s_L" % s_type] / n_voxelsL))
@@ -193,7 +192,7 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
 
 def loop_main_and_plot(components, scoring, dataset, query_server=True,
-                       force=False, sparsityThreshold=0.000005, max_images=np.inf,
+                       force=False, sparsity_threshold=0.000005, max_images=np.inf,
                        memory=Memory(cachedir='nilearn_cache'), **kwargs):
     """
     Loop main.py to plot summaries of WB vs hemi ICA components
@@ -207,15 +206,15 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     (wb_master, R_master, L_master) = (pd.DataFrame() for i in range(3))
 
     # Determine threshold to use for voxel count sparsity based on WB ICA images
-    sparsityThreshold = getSparsityThreshold(components=components, percentile=90,
-                                             force=force)
+    sparsity_threshold = get_sparsity_threshold(
+        components=components, percentile=90, force=force)
 
     for c in components:
         print("Running analysis with %d components" % c)
         (wb_summary, R_sparsity, L_sparsity) = load_or_generate_summary(
             images=images, term_scores=term_scores, n_components=c,
             scoring=scoring, dataset=dataset, force=force,
-            sparsityThreshold=sparsityThreshold, memory=memory)
+            sparsity_threshold=sparsity_threshold, memory=memory)
         # Append them to master DFs
         wb_master = wb_master.append(wb_summary)
         R_master = R_master.append(R_sparsity)
@@ -297,9 +296,9 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
 
     fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
     fh.suptitle("Hemispheric Participation Index for each component", fontsize=16)
-    hpai_styles = {'pos': ['r', 'lightpink', 'above %d' % sparsityThreshold],
-                   'neg': ['b', 'lightblue', 'below -%d' % sparsityThreshold],
-                   'abs': ['g', 'lightgreen', 'with abs value above %d' % sparsityThreshold]}
+    hpai_styles = {'pos': ['r', 'lightpink', 'above %d' % sparsity_threshold],
+                   'neg': ['b', 'lightblue', 'below -%d' % sparsity_threshold],
+                   'abs': ['g', 'lightgreen', 'with abs value above %d' % sparsity_threshold]}
     by_comp = wb_master.groupby("n_comp")
     for ax, sign in zip(axes, sparsity_signs):
         mean, sd = by_comp.mean()["vc-%sHPAI" % sign], by_comp.std()["vc-%sHPAI" % sign]
