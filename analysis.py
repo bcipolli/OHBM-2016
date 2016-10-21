@@ -193,7 +193,7 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
 def loop_main_and_plot(components, scoring, dataset, query_server=True,
                        force=False, sparsity_threshold=0.000005, max_images=np.inf,
-                       memory=Memory(cachedir='nilearn_cache'), **kwargs):
+                       memory=Memory(cachedir='nilearn_cache')):
     """
     Loop main.py to plot summaries of WB vs hemi ICA components
     """
@@ -455,8 +455,6 @@ if __name__ == '__main__':
                         default="5,10,15,20,25,30,35,40,45,50")
     parser.add_argument('--dataset', nargs='?', default='neurovault',
                         choices=['neurovault', 'abide', 'nyu'])
-    parser.add_argument('--seed', nargs='?', type=int, default=42,
-                        dest='random_state')
     parser.add_argument('--scoring', nargs='?', default='correlation',
                         choices=['l1norm', 'l2norm', 'correlation'])
     parser.add_argument('--max_images', nargs='?', type=int, default=np.inf)
