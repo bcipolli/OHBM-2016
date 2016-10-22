@@ -55,9 +55,9 @@ def _neurovault_dedupe(images, strict=False, verbose=False):
                 hard_reject = True
             else:
                 # Duplicate; verify via image data.
-                d1 = nib.load(dup_image['absolute_path']).get_data()
+                d1 = nib.load(dup_image['local_path']).get_data()
                 d1 = d1[np.logical_not(np.isnan(d1))]
-                d2 = nib.load(image['absolute_path']).get_data()
+                d2 = nib.load(image['local_path']).get_data()
                 d2 = d2[np.logical_not(np.isnan(d2))]
 
                 hard_reject = np.all(np.abs(d1 - d2) < 1E-10)
@@ -81,13 +81,13 @@ def _neurovault_remove_bad_images(images, verbose=False):
     print "Searching for bad data across %d images..." % len(images)
     good_images = []
     for image in images:
-        dat = nib.load(image['absolute_path']).get_data()
+        dat = nib.load(image['local_path']).get_data()
         dat = dat[dat != 0]
         image['rejected'] = np.all(dat > 0) or np.all(dat < 0) or (np.unique(dat).size < 2000)
         if not image['rejected']:
             good_images.append(image)
         elif verbose:
-            print "REJECT: %s %s " % (image['map_type'], image['absolute_path'])
+            print "REJECT: %s %s " % (image['map_type'], image['local_path'])
 
     print "Kept %d of %d images" % (len(good_images), len(images))
 
@@ -96,7 +96,7 @@ def _neurovault_remove_bad_images(images, verbose=False):
 
 def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
                      map_types=['F map', 'T map', 'Z map'], collection_ids=tuple(),
-                     image_filters=tuple(), sort_images=True):
+                     image_filters=tuple(), sort_images=True, **kwargs):
     """Give meaningful defaults, extra computations."""
     # Set image filters: The filt_dict contains metadata field for the key
     # and the desired entry for each field as the value.
@@ -120,30 +120,26 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
                     1013,  # ICA component
                     1071,  # Added Oct2016-strange-looking images
                     1889]  # Added Oct2016-extreme vals on edge
-    collection_ids = list(collection_ids) + bad_collects
+    col_ids = [-bid for bid in bad_collects]
+    collection_ids = list(collection_ids) + col_ids
 
-    # Download matching images
-    def image_filter(img_metadata):
-        if img_metadata.get('collection_id') in collection_ids:
-            return False
-        for filt in image_filters:
-            if not filt(img_metadata):
-                return False
-        return True
-        #    query_server=query_server, map_types=map_types,, **kwargs)
-
+    kwargs['image_filters'] = (list(kwargs.get('image_filters', [])) +
+                               image_filters)
+    kwargs['collection_ids'] = (kwargs.get('collection_ids', []) +
+                                collection_ids)
     ss_all = datasets.fetch_neurovault(
-        mode='download_new' if query_server else 'offline',
-        max_images=max_images, image_filter=image_filter,
-        fetch_neurosynth_words=fetch_terms)
-    images = ss_all['images_meta']
+        query_server=query_server,
+        max_images=max_images, map_types=map_types,
+        fetch_terms=fetch_terms, **kwargs)
+    images = ss_all['images']
 
     # Post-fetcher filtering: remove duplicates, bad images from raw data.
-    images = _neurovault_dedupe(images)
-    images = _neurovault_remove_bad_images(images)
+    import pdb; pdb.set_trace()
+    # images = _neurovault_dedupe(images)
+    # images = _neurovault_remove_bad_images(images)
 
     # Stamp some collection properties onto images.
-    colls = dict([(c['id'], c) for c in ss_all['collections_meta']])
+    colls = dict([(c['id'], c) for c in ss_all['collections'].values()])
     for image in images:
         image['DOI'] = colls.get(image['collection_id'], {}).get('DOI')
 

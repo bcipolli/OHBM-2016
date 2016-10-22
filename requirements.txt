@@ -4,6 +4,6 @@ scikit-learn
 matplotlib
 nibabel>=2.0
 pandas>=0.18.1
--e git://github.com/jeromedockes/nilearn@neurovault_fetcher#egg=nilearn
+-e git://github.com/bcipolli/nilearn@neurovault-downloader#egg=nilearn
 git+git://github.com/gldnspud/virtualenv-pythonw-osx.git
 six

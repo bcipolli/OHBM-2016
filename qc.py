@@ -43,7 +43,7 @@ def qc_image_data(dataset, images, plot_dir='qc'):
                      'perc_bad_voxels', 'perc_voxels_outside'))
 
     for ii, image in enumerate(images):
-        im_path = image['absolute_path']
+        im_path = image['local_path']
         if im_path is None:
             continue
 
