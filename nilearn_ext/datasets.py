@@ -25,7 +25,7 @@ def _is_dict_same(d1, d2):
     return len(added) == 0 and len(removed) == 0 and len(modified) == 0 and len(same) == len(d1)
 
 
-def _neurovault_dedupe(images, strict=False, verbose=False):
+def _neurovault_dedupe(images, term_scores, strict=False, verbose=False):
     print "Deduping %d images..." % len(images)
 
     # map type is from the user, so not dependable.
@@ -35,21 +35,26 @@ def _neurovault_dedupe(images, strict=False, verbose=False):
         'perc_voxels_outside']
 
     reduced_dicts = OrderedDict()  # store as dicts for easy manual verification
-    non_dup_images = OrderedDict()
+    non_dup_images = []
+    binary_idx = []
+
     for image in images:
         reduced_image = dict([(key, image.get(key))
                               for key in keys_to_compare])
         dup_images = [_is_dict_same(reduced_image, im)
                       for key, im in reduced_dicts.items()]
-        if not np.any(dup_images):
+        is_dup = not np.any(dup_images)
+        binary_idx.append(is_dup)
+
+        if is_dup:
             # print "Added image %s" % image['id']
             reduced_dicts[image['id']] = reduced_image
-            non_dup_images[image['id']] = image
+            non_dup_images.append(image)
 
         elif verbose:
             dup_idx = np.where(dup_images)[0][0]
             dup_key = reduced_dicts.keys()[dup_idx]
-            dup_image = non_dup_images[dup_key]
+            dup_image = non_dup_images[np.find(dup_images)[0]]
 
             if not strict:
                 hard_reject = True
@@ -69,29 +74,44 @@ def _neurovault_dedupe(images, strict=False, verbose=False):
                 print "Duplicate metadata, but not duplicate image (%s and %s). Discarding anyway." % (
                     image['id'], dup_key)
 
+    # Now filter each term
+    binary_idx = np.asarray(binary_idx)
+    for term in term_scores:
+        term_scores[term] = term_scores[term][binary_idx]
+
     print "Kept %d of %d images" % (len(non_dup_images), len(images))
-    return non_dup_images.values()
+    return non_dup_images, term_scores
 
 
-def _neurovault_remove_bad_images(images, verbose=False):
+def _neurovault_remove_bad_images(images, term_scores, verbose=False):
     """Bad images are:
     * Images that only have positive or negative values.
     * Also remove those with <2000 unique vals (for parcellated stat maps)
     """
     print "Searching for bad data across %d images..." % len(images)
     good_images = []
+    binary_idx = []
+
     for image in images:
         dat = nib.load(image['local_path']).get_data()
         dat = dat[dat != 0]
-        image['rejected'] = np.all(dat > 0) or np.all(dat < 0) or (np.unique(dat).size < 2000)
-        if not image['rejected']:
+        is_rejected = np.all(dat > 0) or np.all(dat < 0) or (np.unique(dat).size < 2000)
+
+        image['rejected'] = is_rejected
+        binary_idx.append(not is_rejected)
+
+        if not is_rejected:
             good_images.append(image)
         elif verbose:
             print "REJECT: %s %s " % (image['map_type'], image['local_path'])
 
-    print "Kept %d of %d images" % (len(good_images), len(images))
+    # Now filter each term
+    binary_idx = np.asarray(binary_idx)
+    for term in term_scores:
+        term_scores[term] = term_scores[term][binary_idx]
 
-    return good_images
+    print "Kept %d of %d images" % (len(good_images), len(images))
+    return good_images, term_scores
 
 
 def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
@@ -132,22 +152,18 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
         max_images=max_images, map_types=map_types,
         fetch_terms=fetch_terms, **kwargs)
     images = ss_all['images']
+    term_scores = ss_all.get('terms', dict())
 
     # Post-fetcher filtering: remove duplicates, bad images from raw data.
-    import pdb; pdb.set_trace()
-    # images = _neurovault_dedupe(images)
-    # images = _neurovault_remove_bad_images(images)
+    images, term_scores = _neurovault_dedupe(images, term_scores)
+    images, term_scores = _neurovault_remove_bad_images(images, term_scores)
 
     # Stamp some collection properties onto images.
     colls = dict([(c['id'], c) for c in ss_all['collections'].values()])
     for image in images:
         image['DOI'] = colls.get(image['collection_id'], {}).get('DOI')
 
-    if not fetch_terms:
-        term_scores = None
-    else:
-        term_scores = ss_all['terms']
-
+    if fetch_terms:
         # Clean & report term scores
         terms = np.array(term_scores.keys())
         term_matrix = np.asarray(term_scores.values())
@@ -163,8 +179,8 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
             range(len(images)),
             lambda k1, k2: images[k1]['id'] - images[k2]['id'])
         images = [images[ii] for ii in idx]
-        if term_scores:
-            term_scores = [term_scores[ti] for ti in idx]
+        for key in term_scores:
+            term_scores[key] = [term_scores[key][ti] for ti in idx]
     return images, term_scores
 
 
