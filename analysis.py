@@ -42,14 +42,18 @@ from nilearn_ext.decomposition import compare_components
 from sklearn.externals.joblib import Memory
 
 
-def get_sparsity_threshold(components, percentile=90, force=False):
+def get_sparsity_threshold(images, term_scores, components, percentile=90,
+                           nii_dir=".", force=False):
     """
     Use WB component images for the given list of components to get the specified
     percentile value of the absolute values across images.
     """
     imgs = []
     for c in components:
-        wb_img = load_or_generate_components(hemi="wb", force=force)
+        wb_img = load_or_generate_components(
+            images=[im['local_path'] for im in images],
+            term_scores=term_scores, hemi="wb",
+            out_dir=nii_dir, force=force)
         imgs.append(wb_img.get_data())
     dat = np.vstack(imgs)
     nonzero_dat = dat[np.nonzero(dat)]
@@ -117,10 +121,12 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
         # Use wb matching in main analysis to get component images and
         # matching scores
+        ## FIX this workflow repeat ICA of wb image twice...first when
+        ## getting the sparsity threshold and here.
         match_method = 'wb'
         img_d, score_mats_d, sign_mats_d = do_main_analysis(
             dataset=dataset, images=images, term_scores=term_scores,
-            key=match_method, force=False, plot=force,
+            key=match_method, force=force, plot=force,
             n_components=n_components, scoring=scoring)
 
         # 1) Get sparsity for each hemisphere for "wb", "R" and "L" imgs
@@ -161,7 +167,7 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
         # 2 x wb or RL images and hemi labels to the compare_components (make sure
         # not to flip signs when comparing R and L)
         name_img_pairs = [("wb_SAS", img_d["wb"]),
-                          ("matchedRL_SAS", img_d["RL"])]
+                          ("matchedRL_SAS", img_d["RL-unforced"])]
         for (name, img) in name_img_pairs:
             sas_imgs = [img] * 2
             score_mat, sign_mat = compare_components(sas_imgs, hemis, scoring,
@@ -171,16 +177,16 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
         # 3) Finally store indices of matched R, L, and RL components, and the
         # respective match scores against wb
-        comparisons = [('wb', 'R'), ('wb', 'L'), ('wb', 'RL')]
+        comparisons = [('wb', 'R'), ('wb', 'L'), ('wb', 'RL-unforced')]
         for comparison in comparisons:
             score_mat, sign_mat = score_mats_d[comparison], sign_mats_d[comparison]
             matched, unmatched = get_match_idx_pair(score_mat, sign_mat)
-            # Component indices for matched R, L , RL are in matched[1].
-            # Multiply it by matched[2], which stores sign flipping info.
-            matched_indices = matched[1] * matched[2]
+            # Component indices for matched R, L , RL are in matched["idx"][1].
+            # Multiply it by matched["sign"][1], which stores sign flipping info.
+            matched_indices = matched["idx"][1] * matched["sign"][1]
             wb_summary["matched%s" % comparison[1]] = matched_indices
 
-            matched_scores = score_mat[matched[0], matched[1]]
+            matched_scores = score_mat[matched["idx"][0], matched["idx"][1]]
             wb_summary["match%s_score" % comparison[1]] = matched_scores
             num_unmatched = unmatched.shape[1] if unmatched is not None else 0
             wb_summary["n_unmatched%s" % comparison[1]] = num_unmatched
@@ -206,8 +212,10 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     (wb_master, R_master, L_master) = (pd.DataFrame() for i in range(3))
 
     # Determine threshold to use for voxel count sparsity based on WB ICA images
+    nii_dir = op.join('ica_nii', dataset, str(components))
     sparsity_threshold = get_sparsity_threshold(
-        components=components, percentile=90, force=force)
+        images=images, term_scores=term_scores, components=components,
+        percentile=90, nii_dir=nii_dir, force=force)
 
     for c in components:
         print("Running analysis with %d components" % c)
