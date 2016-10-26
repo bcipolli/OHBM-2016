@@ -114,6 +114,7 @@ if __name__ == '__main__':
     parser.add_argument('--offline', action='store_true', default=False)
     parser.add_argument('--dataset', nargs='?', default='neurovault',
                         choices=['neurovault', 'abide', 'nyu'])
+    parser.add_argument('--max-images', nargs='?', default=np.inf, type=int)
     args = vars(parser.parse_args())
 
     # Alias args
