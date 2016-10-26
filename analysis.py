@@ -42,20 +42,13 @@ from nilearn_ext.decomposition import compare_components
 from sklearn.externals.joblib import Memory
 
 
-def get_sparsity_threshold(images, term_scores, components, percentile=90,
-                           nii_dir=".", force=False):
+def get_sparsity_threshold(images, percentile=90):
     """
-    Use WB component images for the given list of components to get the specified
+    Give the list of images calculate the specified
     percentile value of the absolute values across images.
     """
-    imgs = []
-    for c in components:
-        wb_img = load_or_generate_components(
-            images=[im['local_path'] for im in images],
-            term_scores=term_scores, hemi="wb",
-            out_dir=nii_dir, force=force)
-        imgs.append(wb_img.get_data())
-    dat = np.vstack(imgs)
+    img_data = [image.get_data() for image in images]
+    dat = np.vstack(img_data)
     nonzero_dat = dat[np.nonzero(dat)]
     thr = stats.scoreatpercentile(np.abs(nonzero_dat), percentile)
 
@@ -121,12 +114,10 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
         # Use wb matching in main analysis to get component images and
         # matching scores
-        ## FIX this workflow repeat ICA of wb image twice...first when
-        ## getting the sparsity threshold and here.
         match_method = 'wb'
         img_d, score_mats_d, sign_mats_d = do_main_analysis(
             dataset=dataset, images=images, term_scores=term_scores,
-            key=match_method, force=force, plot=force,
+            key=match_method, force=False, plot=force,
             n_components=n_components, scoring=scoring)
 
         # 1) Get sparsity for each hemisphere for "wb", "R" and "L" imgs
@@ -205,18 +196,34 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     """
     out_dir = op.join('ica_imgs', dataset, 'analyses')
 
+    # Get data once
     images, term_scores = get_dataset(dataset, max_images=max_images,
                                       query_server=query_server)
+
+    # Perform ICA for WB, R and L for each n_component once and get images
+    hemis = ("wb", "R", "L")
+    imgs = {hemi: [] for hemi in hemis}
+    for hemi in ("wb", "R", "L"):
+        for c in components:
+            print("Generating or loading ICA components for %s,"
+                  " n=%d components" % (hemi, c))
+            nii_dir = op.join('ica_nii', dataset, str(c))
+            kwargs = dict(images=[im['local_path'] for im in images],
+                          n_components=c, term_scores=term_scores,
+                          out_dir=nii_dir, memory=memory)
+
+            img = load_or_generate_components(hemi=hemi, force=force, **kwargs)
+            imgs[hemi].append(img)
+
+    # Use wb images to determine threshold for voxel count sparsity
+    sparsity_threshold = get_sparsity_threshold(images=imgs["wb"], percentile=90)
 
     # Initialize master DFs
     (wb_master, R_master, L_master) = (pd.DataFrame() for i in range(3))
 
-    # Determine threshold to use for voxel count sparsity based on WB ICA images
-    nii_dir = op.join('ica_nii', dataset, str(components))
-    sparsity_threshold = get_sparsity_threshold(
-        images=images, term_scores=term_scores, components=components,
-        percentile=90, nii_dir=nii_dir, force=force)
-
+    # Loop again this time to get sparsity info as well matching scores
+    # and generate summary. Note that if force, summary are calculated again
+    # but ICA won't be repeated.
     for c in components:
         print("Running analysis with %d components" % c)
         (wb_summary, R_sparsity, L_sparsity) = load_or_generate_summary(
