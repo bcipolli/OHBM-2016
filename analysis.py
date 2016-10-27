@@ -78,7 +78,7 @@ def get_hemi_sparsity(img, hemisphere, threshold=0.000005,
     sparsity_dict = {}
     sparsity_dict["l1"] = np.linalg.norm(hemi_vector, axis=1, ord=1)
     sparsity_dict["vc-pos"] = (hemi_vector > threshold).sum(axis=1)
-    sparsity_dict["vc-neg"] = (hemi_vector < threshold).sum(axis=1)
+    sparsity_dict["vc-neg"] = (hemi_vector < -threshold).sum(axis=1)
     sparsity_dict["vc-abs"] = (np.abs(hemi_vector) > threshold).sum(axis=1)
     sparsity_dict["n_voxels"] = hemi_vector.shape[1]
 
