@@ -48,7 +48,7 @@ def get_sparsity_threshold(images, percentile=90):
     percentile value of the absolute values across images.
     """
     img_data = [image.get_data() for image in images]
-    dat = np.vstack(img_data)
+    dat = np.concatenate(img_data, axis=3)
     nonzero_dat = dat[np.nonzero(dat)]
     thr = stats.scoreatpercentile(np.abs(nonzero_dat), percentile)
 
@@ -179,7 +179,7 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
             matched_scores = score_mat[matched["idx"][0], matched["idx"][1]]
             wb_summary["match%s_score" % comparison[1]] = matched_scores
-            num_unmatched = unmatched.shape[1] if unmatched is not None else 0
+            num_unmatched = unmatched["idx"].shape[1] if unmatched["idx"] is not None else 0
             wb_summary["n_unmatched%s" % comparison[1]] = num_unmatched
 
             # Save wb_summary
@@ -358,11 +358,11 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         # Next L1 norm sparsity
         out_path = op.join(out_dir, '3_l1Sparsity_comparison_%s.png' % hemi)
 
-        fh, ax = plt.subplot(1, 1, figsize=(10, 6))
-        fh.title("L1 Sparsity of each component: Comparison of WB "
-                 "and %s-only decomposition" % hemi, fontsize=16)
-        sns.boxplot(x="n_comp", y="l1_%s" % hemi, ax=ax,
-                    hue="decomposition_type", data=sparsity_summary)
+        fh = plt.figure(figsize=(10, 6))
+        plt.title("L1 Sparsity of each component: Comparison of WB "
+                  "and %s-only decomposition" % hemi, fontsize=16)
+        ax = sns.boxplot(x="n_comp", y="l1_%s" % hemi, ax=ax,
+                         hue="decomposition_type", data=sparsity_summary)
         ax.set_xlabel("Number of components")
         ax.set_ylabel("L1 sparsity values")
 
@@ -370,8 +370,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
 
     # 3) Matching results: average matching scores and proportion of unmatched
     out_path = op.join(out_dir, '4_Matching_results_box.png')
-
-    score_cols = ["matchR_score", "matchL_score", "matchRL_score"]
+    score_cols = ["matchR_score", "matchL_score", "matchRL-unforced_score"]
     match_scores = pd.melt(wb_master[["n_comp"] + score_cols], id_vars="n_comp",
                            value_vars=score_cols)
 
