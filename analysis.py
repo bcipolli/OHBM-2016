@@ -433,7 +433,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     """
     Loop main.py to plot summaries of WB vs hemi ICA components
     """
-    out_dir = op.join('analyses', dataset)
+    out_dir = op.join('ica_imgs', dataset, 'analyses')
 
     # Get data once
     images, term_scores = get_dataset(dataset, max_images=max_images,
