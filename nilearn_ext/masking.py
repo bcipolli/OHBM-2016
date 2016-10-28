@@ -83,7 +83,7 @@ class MniNiftiMasker(NiftiMasker):
 
 
 def flip_img_lr(img):
-    """ Convenience function to flip image on X axis"""
+    """Convenience function to flip image on X axis"""
     # This won't work for all image formats! But
     # does work for those that we're working with...
     assert isinstance(img, nib.nifti1.Nifti1Image)
@@ -93,8 +93,8 @@ def flip_img_lr(img):
 
 def split_bilateral_rois(maps_img):
     """Convenience function for splitting bilateral ROIs
-    into two unilateral ROIs"""
-
+    into two unilateral ROIs
+    """
     new_rois = []
 
     for map_img in iter_img(maps_img):
@@ -201,7 +201,7 @@ class HemisphereMasker(NiftiMasker):
 
 
 class MniHemisphereMasker(HemisphereMasker):
-    """ Alias for HemisphereMasker with mask_img==Mni template"""
+    """Alias for HemisphereMasker with mask_img==Mni template"""
     def __init__(self, sessions=None, smoothing_fwhm=None,
                  standardize=False, detrend=False,
                  low_pass=None, high_pass=None, t_r=None,
@@ -234,7 +234,7 @@ class MniHemisphereMasker(HemisphereMasker):
             hemisphere=hemisphere)
 
     def mask_as_img(self, img):
-        """ Convenience function to mask image, return as image."""
+        """Convenience function to mask image, return as image."""
         X = self.fit_transform(img)  # noqa
         new_img = self.inverse_transform(X)
         return new_img_like(img, data=new_img.get_data(), copy_header=True)

@@ -68,9 +68,7 @@ def nice_bounds(axis_start, axis_end, num_ticks=8):
 
 
 def rescale(arr, val_range=(10, 200)):
-    """
-    Rescale array to the given range of numbers
-    """
+    """Rescale array to the given range of numbers"""
     new_arr = ((float(val_range[1]) - val_range[0]) * (arr - arr.min()) /
                (arr.max() - arr.min())) + float(val_range[0])
 
@@ -204,7 +202,7 @@ def plot_component_comparisons(images, labels, score_mat, sign_mat,
         cis = [c1i, c2i]
 
         prefix = "unmatched-" if i >= n_components else ""
-        num = i-n_components if i >= n_components else i
+        num = i - n_components if i >= n_components else i
         png_name = '%s%s_%s_%s.png' % (prefix, labels[0], labels[1], num)
         print "plotting %s" % png_name
 
