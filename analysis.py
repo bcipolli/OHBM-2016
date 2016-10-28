@@ -34,7 +34,7 @@ import pandas as pd
 import seaborn as sns
 from textwrap import wrap
 
-from main import do_main_analysis, get_dataset, load_or_generate_components
+from match import do_match_analysis, get_dataset, load_or_generate_components
 from nilearn_ext.masking import HemisphereMasker
 from nilearn_ext.plotting import save_and_close, rescale
 from nilearn_ext.utils import get_match_idx_pair
@@ -118,7 +118,7 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
         # Use wb matching in main analysis to get component images and
         # matching scores
         match_method = 'wb'
-        img_d, score_mats_d, sign_mats_d = do_main_analysis(
+        img_d, score_mats_d, sign_mats_d = do_match_analysis(
             dataset=dataset, images=images, term_scores=term_scores,
             key=match_method, force=False, plot=force,
             plot_dir=out_dir,

@@ -25,3 +25,6 @@ For `analysis.py` / `match.py`:
 
 For `qc.py`:
 * `qc` - directory of images showing 16 nii files for review. To exclude images / collections, use [`fetch_neurovault`'s filtering procedures](https://github.com/bcipolli/nilearn/blob/neurovault-downloader/nilearn/datasets/func.py#L1505)
+For `match.py`:
+* `ica_nii` - directory containing Nifti1 label maps for each of 20 ICA components when run on left-only, right-only, and both hemispheres.
+* `ica_imgs` - Png images showing each component above (20 for each ICA run) when run on left-only, right-only, and both hemispheres.

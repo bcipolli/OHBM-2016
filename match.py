@@ -124,10 +124,10 @@ def get_dataset(dataset, max_images=np.inf, **kwargs):
     return images, term_scores
 
 
-def do_main_analysis(dataset, images, term_scores, key="wb", n_components=20,
-                     plot=True, max_images=np.inf, scoring='l1norm',
-                     query_server=True, force=False, nii_dir=None,
-                     plot_dir=None, random_state=42, hemis=('wb', 'R', 'L')):
+def do_match_analysis(dataset, images, term_scores, key="wb", n_components=20,
+                      plot=True, max_images=np.inf, scoring='l1norm',
+                      query_server=True, force=False, nii_dir=None,
+                      plot_dir=None, random_state=42, hemis=('wb', 'R', 'L')):
 
     # Output directories
     nii_dir = nii_dir or op.join('ica_nii', dataset, str(n_components))
@@ -242,9 +242,9 @@ def do_main_analysis(dataset, images, term_scores, key="wb", n_components=20,
     return imgs, score_mats, sign_mats
 
 
-def main(dataset, key="wb", n_components=20, plot=True,
-         max_images=np.inf, scoring='l1norm', query_server=True,
-         force=False, nii_dir=None, plot_dir=None, random_state=42):
+def match_main(dataset, key="wb", n_components=20, plot=True,
+               max_images=np.inf, scoring='l1norm', query_server=True,
+               force=False, nii_dir=None, plot_dir=None, random_state=42):
     """
     Compute components, then run requested comparisons.
 
@@ -259,11 +259,10 @@ def main(dataset, key="wb", n_components=20, plot=True,
     For forced one-to-one matching,, this is identical as rl.
 
     """
-
     images, term_scores = get_dataset(dataset, max_images=max_images,
                                       query_server=query_server)
 
-    return do_main_analysis(
+    return do_match_analysis(
         dataset=dataset, images=images, term_scores=term_scores,
         key=key, n_components=n_components, plot=plot, scoring=scoring,
         force=force, nii_dir=nii_dir, plot_dir=plot_dir,
@@ -312,6 +311,6 @@ if __name__ == '__main__':
 
     # Run main
     plot = not args.pop('skip_plot')
-    main(query_server=query_server, plot=plot, **args)
+    match_main(query_server=query_server, plot=plot, **args)
 
     plt.show()
