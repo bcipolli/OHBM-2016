@@ -204,10 +204,9 @@ def generate_component_specific_plots(wb_master, components, out_dir=None):
         # 1) Relationship between positive and negative HPAI in wb components
         out_path = op.join(comp_outdir, "1_PosNegHPAI_%dcomponents.png" % c)
 
-        # set color to be proportional to the symmetry in the vc-sparsity (Pos-Neg/Abs),
-        # and set size to be proportional to the total vc-sparsity (Abs)
-        color = ((wb_summary['vc-posTotal'] - wb_summary['vc-negTotal'])
-                 / wb_summary['vc-absTotal'])
+        # set color to be the proportion of pos relative to abs (% posTotal)
+        # 0.5 more anti-correlated network, 1 no anti-correlated network
+        color = (wb_summary['vc-posTotal'] / wb_summary['vc-absTotal'])
         size = rescale(wb_summary['vc-absTotal'])
         ax = wb_summary.plot.scatter(x='vc-posHPAI', y='vc-negHPAI', c=color, s=size,
                                      xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), edgecolors="grey",
@@ -229,7 +228,7 @@ def generate_component_specific_plots(wb_master, components, out_dir=None):
         title.set_y(1.05)
         f.subplots_adjust(top=0.8)
         cax = f.get_axes()[1]
-        cax.set_ylabel('Balance between pos/neg(anti-correlated network)',
+        cax.set_ylabel('Proportion of pos (lower vals indicate anti-correlated network)',
                        rotation=270, labelpad=20)
 
         save_and_close(out_path)
@@ -454,7 +453,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     # Use wb images to determine threshold for voxel count sparsity
     print("Getting sparsity threshold.")
     sparsity_threshold = get_sparsity_threshold(images=imgs["wb"], percentile=90)
-
+    print("Using sparsity threshold of %0.6f" % sparsity_threshold)
     # Loop again this time to get sparsity info as well matching scores
     # and generate summary. Note that if force, summary are calculated again
     # but ICA won't be repeated.
@@ -471,18 +470,20 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         L_master = L_master.append(L_sparsity)
 
     # Generate plots over a range of specified n_components ###
-    print "Generating plots over a range of components."
+    print "Generating plots for each n_components."
     generate_component_specific_plots(
         components=components, out_dir=out_dir, wb_master=wb_master)
 
     # Reset indices of master DFs and save
     master_DFs = dict(
         wb_master=wb_master, R_master=R_master, L_master=L_master)
+    print "Saving summary csvs..."
     for key in master_DFs:
         master_DFs[key].reset_index(inplace=True)
         master_DFs[key].to_csv(op.join(out_dir, '%s_summary.csv' % key))
 
     # Generate main plots
+    print "Generating summary plots.."
     _generate_plot_1(wb_master=wb_master, sparsity_threshold=sparsity_threshold,
                      out_dir=out_dir)
     _generate_plot_2(out_dir=out_dir, **master_DFs)
