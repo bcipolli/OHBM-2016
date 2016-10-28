@@ -147,12 +147,9 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
                     if "vc" in s_type:
                         # Get n_voxels in each hemi to adjust for the differences in
                         # n_voxels in each hemi when calculating HPAI
-                        n_voxelsR = sparsity_results["R"]["n_voxels"]
-                        n_voxelsL = sparsity_results["L"]["n_voxels"]
-                        n_voxelsB = n_voxelsR + n_voxelsL
-                        df["%sHPAI" % s_type] = (((df["%s_R" % s_type] / n_voxelsR)
-                                                 - (df["%s_L" % s_type] / n_voxelsL))
-                                                 / (df["%sTotal" % s_type] / n_voxelsB))
+                        R_ratio = df["%s_R" % s_type] / sparsity_results["R"]["n_voxels"]
+                        L_ratio = df["%s_L" % s_type] / sparsity_results["L"]["n_voxels"]
+                        df["%sHPAI" % s_type] = (R_ratio - L_ratio) / (R_ratio + L_ratio)
 
         # Save R/L_sparsity DFs
         R_sparsity.to_csv(op.join(out_dir, "R_sparsity.csv"))
