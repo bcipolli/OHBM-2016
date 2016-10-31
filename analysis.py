@@ -57,7 +57,7 @@ def get_sparsity_threshold(images, percentile=99.9):
         for component_img in iter_img(image):
             dat = component_img.get_data()
             nonzero_dat = dat[np.nonzero(dat)]
-            thr=stats.scoreatpercentile(np.abs(dat), percentile)
+            thr = stats.scoreatpercentile(np.abs(nonzero_dat), percentile)
             ind_thr.append(thr)
         min_thr.append(min(ind_thr))
     thr = min(min_thr)
