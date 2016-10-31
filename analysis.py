@@ -35,6 +35,7 @@ import seaborn as sns
 from textwrap import wrap
 
 from match import do_match_analysis, get_dataset, load_or_generate_components
+from nilearn.image import iter_img
 from nilearn_ext.masking import HemisphereMasker
 from nilearn_ext.plotting import save_and_close, rescale
 from nilearn_ext.utils import get_match_idx_pair
@@ -45,15 +46,21 @@ from sklearn.externals.joblib import Memory
 SPARSITY_SIGNS = ['pos', 'neg', 'abs']
 
 
-def get_sparsity_threshold(images, percentile=90):
+def get_sparsity_threshold(images, percentile=99.9):
     """
-    Give the list of images calculate the specified
-    percentile value of the absolute values across images.
+    Given the list of images, get sparsity threshold by getting the specified
+    percentile value for each image in each component, and finding the the minimum.
     """
-    img_data = [image.get_data() for image in images]
-    dat = np.concatenate(img_data, axis=3)
-    nonzero_dat = dat[np.nonzero(dat)]
-    thr = stats.scoreatpercentile(np.abs(nonzero_dat), percentile)
+    min_thr = []
+    for image in images:
+        ind_thr = []
+        for component_img in iter_img(image):
+            dat = component_img.get_data()
+            nonzero_dat = dat[np.nonzero(dat)]
+            thr=stats.scoreatpercentile(np.abs(dat), percentile)
+            ind_thr.append(thr)
+        min_thr.append(min(ind_thr))
+    thr = min(min_thr)
 
     return thr
 
@@ -280,7 +287,7 @@ def _generate_plot_1(wb_master, sparsity_threshold, out_dir):
         ax.set_xlim((0, components[-1] + 5))
         ax.set_ylim((-1, 1))
         ax.set_xticks(components)
-        ax.set_ylabel("HPAI((R-L)/(R+L) for # of voxels %s" % (hpai_styles[sign][2]))
+        ax.set_ylabel("HPAI((R-L)/(R+L) for # of voxels %s)" % (hpai_styles[sign][2]))
     fh.text(0.5, 0.04, "Number of components", ha="center")
 
     save_and_close(out_path, fh=fh)
@@ -316,10 +323,11 @@ def _generate_plot_2(wb_master, R_master, L_master, out_dir):
         out_path = op.join(out_dir, '3_l1Sparsity_comparison_%s.png' % hemi)
 
         fh = plt.figure(figsize=(10, 6))
+        ax = fh.gca()
         plt.title("L1 Sparsity of each component: Comparison of WB "
                   "and %s-only decomposition" % hemi, fontsize=16)
-        ax = sns.boxplot(x="n_comp", y="l1_%s" % hemi, ax=ax,
-                         hue="decomposition_type", data=sparsity_summary)
+        sns.boxplot(x="n_comp", y="l1_%s" % hemi, ax=ax,
+                    hue="decomposition_type", data=sparsity_summary)
         ax.set_xlabel("Number of components")
         ax.set_ylabel("L1 sparsity values")
 
@@ -452,7 +460,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
 
     # Use wb images to determine threshold for voxel count sparsity
     print("Getting sparsity threshold.")
-    sparsity_threshold = get_sparsity_threshold(images=imgs["wb"], percentile=90)
+    sparsity_threshold = get_sparsity_threshold(images=imgs["wb"], percentile=99.9)
     print("Using sparsity threshold of %0.6f" % sparsity_threshold)
     # Loop again this time to get sparsity info as well matching scores
     # and generate summary. Note that if force, summary are calculated again
