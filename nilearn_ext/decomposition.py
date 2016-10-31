@@ -188,3 +188,33 @@ def compare_components(images, labels, scoring='correlation', flip=True,
             score_mat[c1i, c2i] = score
 
     return score_mat, sign_mat
+
+
+def compare_RL(wb_image, scoring="correlation",
+               memory=Memory(cachedir='nilearn_cache')):
+    ''' Compare R and L side of the whole-brain image using the specified method'''
+
+    n_components = wb_imgage.shape[3]
+
+    print("Loading the whole-brain image.")
+    wb_image.get_data()  # Just loaded to get them in memory..
+
+    # Use only lh_masker to ensure the same size
+    masker = HemisphereMasker(hemisphere='L', memory=memory).fit()
+    R_img = masker.transform(flip_img_lr(wb_img))
+    L_img = masker.transform(wb_image)
+
+    print("Comparing R and L spatial similarity using %s" % scoring)
+    score_arr = np.zeros(n_components)
+    for i, r_comp, l_comp in enumerate(zip(iter_img(R_img), iter_img(L_img))):
+        r_dat = r_comp.ravel()
+        l_dat = l_comp.ravel()
+        if not isinstance(scoring, string_types):  # function
+            sc = scoring(r_dat, l_dat)
+        elif scoring == 'correlation':
+            sc = stats.stats.pearsonr(r_dat, l_dat)[0]
+        else:
+            raise NotImplementedError(scoring)
+        score_arr[i] = sc
+
+    return score_arr
