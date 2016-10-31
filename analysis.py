@@ -12,16 +12,16 @@ of lateralized organization in WB.
 
 To analyze symmetry of WB components, Calculate;
 1) HPAI (Hemisphere Participation Asymmetry Index)
-2) SAS (spatial asymmetry score: dissimilarity score between R and L)
+2) SSS (spatial symmetry score: similarity score between R and L, using correlation)
 for each WB ICA component image to show the relationship between the two.
 
 Then for each component, find the best-matching half-brain R&L components,
-compare the SAS between them to see how much it  (increases relative to the
-whole-brain SAS. Also compare terms associated with whole-brain and matching
+compare the SSS between them to see how much it  (increases relative to the
+whole-brain SSS. Also compare terms associated with whole-brain and matching
 half-brain components.
 
 Do that with a hard loop on the # of components, then
-plotting the mean SAS change.
+plotting the mean SSS change.
 """
 
 import os
@@ -39,7 +39,7 @@ from nilearn.image import iter_img
 from nilearn_ext.masking import HemisphereMasker
 from nilearn_ext.plotting import save_and_close, rescale
 from nilearn_ext.utils import get_match_idx_pair
-from nilearn_ext.decomposition import compare_components
+from nilearn_ext.decomposition import compare_RL
 from sklearn.externals.joblib import Memory
 
 
@@ -61,7 +61,6 @@ def get_sparsity_threshold(images, percentile=99.9):
             ind_thr.append(thr)
         min_thr.append(min(ind_thr))
     thr = min(min_thr)
-
     return thr
 
 
@@ -162,17 +161,14 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
         R_sparsity.to_csv(op.join(out_dir, "R_sparsity.csv"))
         L_sparsity.to_csv(op.join(out_dir, "L_sparsity.csv"))
 
-        # 2) Get SAS of wb component images as well as matched RL images by passing
+        # 2) Get SSS of wb component images as well as matched RL images by passing
         # 2 x wb or RL images and hemi labels to the compare_components (make sure
         # not to flip signs when comparing R and L)
-        name_img_pairs = [("wb_SAS", img_d["wb"]),
-                          ("matchedRL_SAS", img_d["RL-unforced"])]
+        name_img_pairs = [("wb_SSS", img_d["wb"]),
+                          ("matchedRL_SSS", img_d["RL-unforced"])]
         for (name, img) in name_img_pairs:
-            sas_imgs = [img] * 2
-            score_mat, sign_mat = compare_components(sas_imgs, hemis, scoring,
-                                                     flip=False)
-            # we only care about the diagonal in score_mat
-            wb_summary[name] = score_mat.diagonal()
+            score_arr = compare_RL(img)
+            wb_summary[name] = score_arr
 
         # 3) Finally store indices of matched R, L, and RL components, and the
         # respective match scores against wb
@@ -196,7 +192,7 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
     return (wb_summary, R_sparsity, L_sparsity)
 
 
-def generate_component_specific_plots(wb_master, components, out_dir=None):
+def generate_component_specific_plots(wb_master, components, scoring, out_dir=None):
     """Asdf"""
     start_idx = 0
     for c in components:
@@ -240,16 +236,16 @@ def generate_component_specific_plots(wb_master, components, out_dir=None):
 
         save_and_close(out_path)
 
-        # 2) Relationship between HPAI and SAS in wb components
-        out_path = op.join(comp_outdir, "2_HPAIvsSAS_%dcomponents.png" % c)
+        # 2) Relationship between HPAI and SSS in wb components
+        out_path = op.join(comp_outdir, "2_HPAIvsSSS_%dcomponents.png" % c)
 
         fh, axes = plt.subplots(1, 3, sharey=True, figsize=(18, 6))
-        fh.suptitle("The relationship between HPAI values and SAS: "
+        fh.suptitle("The relationship between HPAI values and SSS: "
                     "n_components = %d" % c, fontsize=16)
         hpai_sign_colors = {'pos': 'r', 'neg': 'b', 'abs': 'g'}
         for ax, sign in zip(axes, SPARSITY_SIGNS):
             size = rescale(wb_summary['vc-%sTotal' % sign]) * 2
-            ax.scatter(wb_summary['vc-%sHPAI' % sign], wb_summary['wb_SAS'],
+            ax.scatter(wb_summary['vc-%sHPAI' % sign], wb_summary['wb_SSS'],
                        c=hpai_sign_colors[sign], s=size, edgecolors="grey")
             ax.set_xlabel("%s HPAI" % sign)
             ax.set_xlim(-1.1, 1.1)
@@ -261,7 +257,8 @@ def generate_component_specific_plots(wb_master, components, out_dir=None):
             ax.xaxis.set_ticks_position('bottom')
             ax.spines['bottom'].set_position(('data', 0))
             plt.setp(ax, xticks=ticks, xticklabels=labels)
-        fh.text(0.04, 0.5, "Spatial Asymmetry Score", va='center', rotation='vertical')
+        fh.text(0.04, 0.5, "Spatial Symmetry Score using %s" % scoring,
+                va='center', rotation='vertical')
 
         save_and_close(out_path)
 
@@ -293,7 +290,7 @@ def _generate_plot_1(wb_master, sparsity_threshold, out_dir):
     save_and_close(out_path, fh=fh)
 
 
-def _generate_plot_2(wb_master, R_master, L_master, out_dir):
+def _generate_plot_2_3(wb_master, R_master, L_master, out_dir):
     # 2) VC and 3) L1 Sparsity comparison between wb and hemi components
     print "more plots, of sparsity."
     for hemi, hemi_df in zip(("R", "L"), (R_master, L_master)):
@@ -334,9 +331,9 @@ def _generate_plot_2(wb_master, R_master, L_master, out_dir):
         save_and_close(out_path, fh=fh)
 
 
-def _generate_plot_3(wb_master, scoring, out_dir):
+def _generate_plot_4(wb_master, scoring, out_dir):
 
-    # 3) Matching results: average matching scores and proportion of unmatched
+    # 4) Matching results: average matching scores and proportion of unmatched
     print "Matching results"
     out_path = op.join(out_dir, '4_Matching_results_box.png')
     score_cols = ["matchR_score", "matchL_score", "matchRL-unforced_score"]
@@ -371,61 +368,58 @@ def _generate_plot_3(wb_master, scoring, out_dir):
     save_and_close(out_path, fh=fh)
 
 
-def _generate_plot_4(wb_master, scoring, out_dir):
+def _generate_plot_5(wb_master, scoring, out_dir):
 
-    # 4) SAS for wb components and matched RL components
-    print "SAS for wb components"
-    out_path = op.join(out_dir, '5_wb_RL_SAS_box.png')
+    # 5) SSS for wb components and matched RL components
+    print "SSS for wb components"
+    title = "Spatial Symmetry Score for WB and the matched RL components"
+    xlabel = "Number of components"
+    ylabel = "Spatial Symmetry Score using %s " % scoring
 
-    sas_cols = ["wb_SAS", "matchedRL_SAS"]
-    sas = pd.melt(wb_master[["n_comp"] + sas_cols], id_vars="n_comp",
-                  value_vars=sas_cols)
+    out_path = op.join(out_dir, '5_wb_RL_SSS_box.png')
+
+    sss_cols = ["wb_SSS", "matchedRL_SSS"]
+    sss = pd.melt(wb_master[["n_comp"] + sss_cols], id_vars="n_comp",
+                  value_vars=sss_cols)
 
     fh = plt.figure(figsize=(10, 6))
-    plt.title("Spatial Asymmetry Score for WB and the matched RL components")
-    ax = sns.boxplot(x="n_comp", y="value", hue="variable", data=sas)
-    ylabel = "\n".join(wrap("Spatial Asymmetry Score using %s "
-                            "(higher values indicate asymmetry)" % scoring, 50))
-    ax.set(xlabel="Number of components", ylabel=ylabel)
+    plt.title(title)
+    ax = sns.boxplot(x="n_comp", y="value", hue="variable", data=sss)
+    ax.set(xlabel=xlabel, ylabel=ylabel)
 
     save_and_close(out_path, fh=fh)
 
-
-def _generate_plot_5(wb_master, scoring, out_dir):
-
     # Same data but with paired dots and lines
-    out_path = op.join(out_dir, '5_wb_RL_SAS_dots.png')
+    out_path = op.join(out_dir, '5_wb_RL_SSS_dots.png')
 
     fh = plt.figure(figsize=(10, 6))
-    plt.title("Spatial Asymmetry Score for WB and the matched RL components")
-    ylabel = "\n".join(wrap("Spatial Asymmetry Score using %s "
-                            "(higher values indicate asymmetry)" % scoring, 50))
+    plt.title(title)
 
     # first plot lines between individual plots
     for i in range(len(wb_master.index)):
-        linestyle = "-" if (wb_master.wb_SAS[i] - wb_master.matchedRL_SAS[i]) > 0 else "--"
+        linestyle = "-" if (wb_master.wb_SSS[i] - wb_master.matchedRL_SSS[i]) > 0 else "--"
         plt.plot([wb_master.n_comp.astype(int)[i] - 1, wb_master.n_comp.astype(int)[i] + 1],
-                 [wb_master.wb_SAS[i], wb_master.matchedRL_SAS[i]],
+                 [wb_master.wb_SSS[i], wb_master.matchedRL_SSS[i]],
                  c="grey", linestyle=linestyle, linewidth=1.0)
 
     # add scatter points
     colors = sns.color_palette("Spectral")
-    plt.scatter(wb_master.n_comp.astype(int) - 1, wb_master.wb_SAS,
+    plt.scatter(wb_master.n_comp.astype(int) - 1, wb_master.wb_SSS,
                 c=colors[1], label="WB")
-    plt.scatter(wb_master.n_comp.astype(int) + 1, wb_master.matchedRL_SAS,
+    plt.scatter(wb_master.n_comp.astype(int) + 1, wb_master.matchedRL_SSS,
                 c=colors[4], label="matched RL")
     plt.legend()
 
     # add mean change
     by_comp = wb_master.groupby("n_comp")
     for c, grouped in by_comp:
-        linestyle = "-" if (grouped.wb_SAS.mean() - grouped.matchedRL_SAS.mean()) > 0 else "--"
-        plt.plot([int(c) - 1, int(c) + 1], [grouped.wb_SAS.mean(), grouped.matchedRL_SAS.mean()],
+        linestyle = "-" if (grouped.wb_SSS.mean() - grouped.matchedRL_SSS.mean()) > 0 else "--"
+        plt.plot([int(c) - 1, int(c) + 1], [grouped.wb_SSS.mean(), grouped.matchedRL_SSS.mean()],
                  c="black", linestyle=linestyle)
     comp_arr = np.asarray(map(int, components))
-    plt.scatter(comp_arr - 1, by_comp.wb_SAS.mean(), c=colors[0], s=80, marker="+")
-    plt.scatter(comp_arr + 1, by_comp.matchedRL_SAS.mean(), c=colors[5], s=80, marker="+")
-    plt.xlabel("Number of components")
+    plt.scatter(comp_arr - 1, by_comp.wb_SSS.mean(), c=colors[0], s=80, marker="+")
+    plt.scatter(comp_arr + 1, by_comp.matchedRL_SSS.mean(), c=colors[5], s=80, marker="+")
+    plt.xlabel(xlabel)
     plt.ylabel(ylabel)
 
     save_and_close(out_path, fh=fh)
@@ -480,7 +474,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     # Generate plots over a range of specified n_components ###
     print "Generating plots for each n_components."
     generate_component_specific_plots(
-        components=components, out_dir=out_dir, wb_master=wb_master)
+        wb_master=wb_master, components=components, scoring=scoring, out_dir=out_dir)
 
     # Reset indices of master DFs and save
     master_DFs = dict(
@@ -494,8 +488,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     print "Generating summary plots.."
     _generate_plot_1(wb_master=wb_master, sparsity_threshold=sparsity_threshold,
                      out_dir=out_dir)
-    _generate_plot_2(out_dir=out_dir, **master_DFs)
-    _generate_plot_3(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
+    _generate_plot_2_3(out_dir=out_dir, **master_DFs)
     _generate_plot_4(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
     _generate_plot_5(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
 
