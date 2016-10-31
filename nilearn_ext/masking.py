@@ -6,7 +6,7 @@ import numpy as np
 
 import nibabel as nib
 from nilearn import datasets
-from nilearn.image import iter_img, reorder_img, new_img_like
+from nilearn.image import iter_img, reorder_img, new_img_like, index_img
 from nilearn.input_data import NiftiMasker
 from sklearn.externals.joblib import Memory
 
@@ -108,8 +108,8 @@ def split_bilateral_rois(maps_img):
 
     new_maps_data = np.concatenate(new_rois, axis=3)
     new_maps_img = new_img_like(maps_img, data=new_maps_data, copy_header=True)
-    print("Changed from %d ROIs to %d ROIs" % (maps_img.shape[-1],
-                                               new_maps_img.shape[-1]))
+    # print("Changed from %d ROIs to %d ROIs" % (maps_img.shape[-1], # This isn't right...
+    #                                            new_maps_img.shape[-1]))
     return new_maps_img
 
 
@@ -119,6 +119,17 @@ def join_bilateral_rois(R_img, L_img):  # noqa
 
     joined_data = R_img.get_data() + L_img.get_data()
     return new_img_like(R_img, data=joined_data)
+
+
+def get_hemi_gm_mask(hemi="L"):
+    """Convenience function for getting R or L gm mask"""
+    gm_img = nib.load(fetch_grey_matter_mask())
+    gm_imgs = split_bilateral_rois(gm_img)
+    gm_imgs_d = {hemi: index_img(gm_imgs, i)
+                 for hemi, i in zip(("L", "R"), (0, 1))}
+
+    return gm_imgs_d[hemi]
+
 
 
 class HemisphereMasker(NiftiMasker):

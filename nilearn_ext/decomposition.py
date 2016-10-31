@@ -8,6 +8,7 @@ import os.path as op
 import numpy as np
 from nilearn import datasets
 from nilearn.image import iter_img
+from nilearn.masking import apply_mask
 
 from six import string_types
 from sklearn.decomposition import FastICA
@@ -16,7 +17,7 @@ from scipy import stats
 
 from nibabel_ext import NiftiImageWithTerms
 from .image import cast_img, clean_img
-from .masking import HemisphereMasker, flip_img_lr, GreyMatterNiftiMasker
+from .masking import HemisphereMasker, flip_img_lr, GreyMatterNiftiMasker, get_hemi_gm_mask
 
 
 def generate_components(images, hemi, term_scores=None,
@@ -190,29 +191,24 @@ def compare_components(images, labels, scoring='correlation', flip=True,
     return score_mat, sign_mat
 
 
-def compare_RL(wb_image, scoring="correlation",
+def compare_RL(wb_img, scoring="correlation",
                memory=Memory(cachedir='nilearn_cache')):
     ''' Compare R and L side of the whole-brain image using the specified method'''
 
-    n_components = wb_imgage.shape[3]
-
-    print("Loading the whole-brain image.")
-    wb_image.get_data()  # Just loaded to get them in memory..
+    n_components = wb_img.shape[3]
 
     # Use only lh_masker to ensure the same size
-    masker = HemisphereMasker(hemisphere='L', memory=memory).fit()
-    R_img = masker.transform(flip_img_lr(wb_img))
-    L_img = masker.transform(wb_image)
+    mask = get_hemi_gm_mask(hemi="L")
+    masked_r = apply_mask(flip_img_lr(wb_img), mask)
+    masked_l = apply_mask(wb_img, mask)
 
     print("Comparing R and L spatial similarity using %s" % scoring)
     score_arr = np.zeros(n_components)
-    for i, r_comp, l_comp in enumerate(zip(iter_img(R_img), iter_img(L_img))):
-        r_dat = r_comp.ravel()
-        l_dat = l_comp.ravel()
+    for i in range(n_components):
         if not isinstance(scoring, string_types):  # function
-            sc = scoring(r_dat, l_dat)
+            sc = scoring(masked_r[i], masked_l[i])
         elif scoring == 'correlation':
-            sc = stats.stats.pearsonr(r_dat, l_dat)[0]
+            sc = stats.stats.pearsonr(masked_r[i], masked_l[i])[0]
         else:
             raise NotImplementedError(scoring)
         score_arr[i] = sc
