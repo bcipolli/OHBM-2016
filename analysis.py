@@ -36,7 +36,8 @@ from textwrap import wrap
 
 from match import do_match_analysis, get_dataset, load_or_generate_components
 from nilearn.image import iter_img
-from nilearn_ext.masking import HemisphereMasker
+from nilearn.masking import apply_mask
+from nilearn_ext.masking import flip_img_lr, get_hemi_gm_mask
 from nilearn_ext.plotting import save_and_close, rescale
 from nilearn_ext.utils import get_match_idx_pair
 from nilearn_ext.decomposition import compare_RL
@@ -46,30 +47,33 @@ from sklearn.externals.joblib import Memory
 SPARSITY_SIGNS = ['pos', 'neg', 'abs']
 
 
-def get_sparsity_threshold(images, percentile=99.9):
+def get_sparsity_threshold(images, global_percentile=99.9):
     """
-    Given the list of images, get sparsity threshold by getting the specified
-    percentile value for each image in each component, and finding the the minimum.
+    Given the list of images, get global (across images) sparsity threshold
+    using the specified percentile values.
+
+    The global_percentile for each image in each component are obtained,
+    and the minimum value is returned.
     """
-    min_thr = []
+    global_thr = []
     for image in images:
-        ind_thr = []
+        g_thr = []
         for component_img in iter_img(image):
             dat = component_img.get_data()
             nonzero_dat = dat[np.nonzero(dat)]
-            thr = stats.scoreatpercentile(np.abs(nonzero_dat), percentile)
-            ind_thr.append(thr)
-        min_thr.append(min(ind_thr))
-    thr = min(min_thr)
+            g = stats.scoreatpercentile(np.abs(nonzero_dat), global_percentile)
+            g_thr.append(g)
+        global_thr.append(min(g_thr))
+    thr = min(global_thr)
+
     return thr
 
 
-def get_hemi_sparsity(img, hemisphere, threshold=0.000005,
-                      memory=Memory(cachedir='nilearn_cache')):
+def get_hemi_sparsity(img, hemi, thr=0.000005):
     """
     Calculate sparsity of the image for the given hemisphere.
     Sparsity is calculated using 1) l1norm ("l1") value of the image, and
-    2) voxel count ("vc") for # of voxels above the given threshold.
+    2) voxel count ("vc") for # of voxels above a threshold.
 
     The vc method is calculated separately for pos, neg side of the image
     and for absolute values, to detect any anti-correlated netowrks.
@@ -81,22 +85,91 @@ def get_hemi_sparsity(img, hemisphere, threshold=0.000005,
     The dict also contains n_voxels for the given hemi.
     """
     # Transform img to vector for the specified hemisphere
-    hemi_masker = HemisphereMasker(hemisphere=hemisphere, memory=memory).fit()
-    hemi_vector = hemi_masker.transform(img)
-
+    gm_mask = get_hemi_gm_mask(hemi=hemi)
+    masked = apply_mask(img, gm_mask)
     sparsity_dict = {}
-    sparsity_dict["l1"] = np.linalg.norm(hemi_vector, axis=1, ord=1)
-    sparsity_dict["vc-pos"] = (hemi_vector > threshold).sum(axis=1)
-    sparsity_dict["vc-neg"] = (hemi_vector < -threshold).sum(axis=1)
-    sparsity_dict["vc-abs"] = (np.abs(hemi_vector) > threshold).sum(axis=1)
-    sparsity_dict["n_voxels"] = hemi_vector.shape[1]
+    sparsity_dict["l1"] = np.linalg.norm(masked, axis=1, ord=1)
+    sparsity_dict["vc-pos"] = (masked > thr).sum(axis=1)
+    sparsity_dict["vc-neg"] = (masked < -thr).sum(axis=1)
+    sparsity_dict["vc-abs"] = (np.abs(masked) > thr).sum(axis=1)
 
     return sparsity_dict
 
 
+def calculate_acni(img, hemi, percentile=95.0):
+    """
+    For each component image in the give ICA image, calculate Anti-Correlated
+    Network Index (ACNI), which is simply a proportion of negative activation
+    out of all the voxels whose magnitude is above a given percentile value.
+
+    i.e. the component with value close to 0.5 has strong ACN, with positive and
+    negative side of the activation equally balanced, while a value
+    close to 0 indicates the component has very little ACN.
+
+    Returns an array of length equal to the n_component of the given image.
+    """
+    n_components = img.shape[3]
+
+    # Get threshold values for each image based on the given percentile val.
+    gm_mask = get_hemi_gm_mask(hemi=hemi)
+    masked = apply_mask(img, gm_mask)
+    thr = stats.scoreatpercentile(np.abs(masked), percentile, axis=1)
+    reshaped_thr = thr.reshape((n_components, 1))
+
+    neg_voxels = np.sum(masked < -reshaped_thr, axis=1)
+    abs_voxels = np.sum(np.abs(masked) > reshaped_thr, axis=1)
+
+    acni = np.divide(neg_voxels, abs_voxels.astype(float))
+
+    return acni
+
+
+def calculate_hpai(wb_img, percentile=95.0):
+    """
+    Compute HPAI for each component image of the given WB ICA image.
+
+    It is calculated by first taking the voxels whose magnitude is above
+    a given percentile (default 95.0), and calculating (R-L)/(R+L) for
+    the number of voxels. The L grey matter mask is applied to both sides to
+    keep the total numnber of voxels in the hemispheres eaual.
+
+    HPAI is calculated separately for positive, negative, and absolute values,
+    and returned as a dictionary with SPARSITY_SIGNS as keys.
+    """
+    n_components = wb_img.shape[3]
+
+    hpai_d = {}
+
+    # Get threshold values for each image based on the given percentile val.
+    gm_mask = get_hemi_gm_mask(hemi="wb")
+    wb_masked = apply_mask(wb_img, gm_mask)
+    thr = stats.scoreatpercentile(np.abs(wb_masked), percentile, axis=1)
+    reshaped_thr = thr.reshape((n_components, 1))
+
+    # Count the number of voxels above the threshold in each hemisphere.
+    # Use only lh_masker to ensure the same size
+    hemi_mask = get_hemi_gm_mask(hemi="L")
+    masked_r = apply_mask(flip_img_lr(wb_img), hemi_mask)
+    masked_l = apply_mask(wb_img, hemi_mask)
+    for sign in SPARSITY_SIGNS:
+        if sign == "pos":
+            voxel_r = np.sum(masked_r > reshaped_thr, axis=1)
+            voxel_l = np.sum(masked_l > reshaped_thr, axis=1)
+        elif sign == "neg":
+            voxel_r = np.sum(masked_r < -reshaped_thr, axis=1)
+            voxel_l = np.sum(masked_l < -reshaped_thr, axis=1)
+        elif sign == "abs":
+            voxel_r = np.sum(np.abs(masked_r) > reshaped_thr, axis=1)
+            voxel_l = np.sum(np.abs(masked_l) > reshaped_thr, axis=1)
+
+        hpai_d[sign] = np.divide((voxel_r - voxel_l), (voxel_r + voxel_l).astype(float))
+
+    return hpai_d
+
+
 def load_or_generate_summary(images, term_scores, n_components, scoring, dataset,
-                             force=False, out_dir=None, sparsity_threshold=0.000005,
-                             memory=Memory(cachedir='nilearn_cache')):
+                             sparsity_threshold, acni_percentile=95.0, hpai_percentile=95.0,
+                             force=False, out_dir=None, memory=Memory(cachedir='nilearn_cache')):
     """
     For a given n_components, load summary csvs if they already exist, or
     run main.py to get and save necessary summary data required for plotting.
@@ -113,62 +186,66 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
         (wb_summary, R_sparsity, L_sparsity) = (pd.read_csv(op.join(out_dir, csv))
                                                 for csv in summary_csvs)
 
-    # Otherwise run main.py and save them as csv files
+    # Otherwise run match analysis and save them as csv files
     else:
         # Initialize summary DFs
-        (wb_summary, R_sparsity, L_sparsity) = (pd.DataFrame(
+        (wb_summary, R_summary, L_summary) = (pd.DataFrame(
             {"n_comp": [n_components] * n_components}) for i in range(3))
         if not op.exists(out_dir):
             os.makedirs(out_dir)
 
-        # Use wb matching in main analysis to get component images and
+        # Use wb matching in match analysis to get component images and
         # matching scores
         match_method = 'wb'
         img_d, score_mats_d, sign_mats_d = do_match_analysis(
             dataset=dataset, images=images, term_scores=term_scores,
             key=match_method, force=False, plot=force,
-            plot_dir=out_dir,
-            n_components=n_components, scoring=scoring)
+            plot_dir=out_dir, n_components=n_components, scoring=scoring)
 
-        # 1) Get sparsity for each hemisphere for "wb", "R" and "L" imgs
-        hemis = ("R", "L")
+        # 1) For each of "wb", "R", and "L" image, get sparsity and ACNI
+        # (Anti-Correlated Network index). For "wb", also get HPAI
+        # (Hemispheric participation asymmetry index).
+        hemis = ("R", "L", "wb")
         sparsityTypes = ("l1", "vc-pos", "vc-neg", "vc-abs")
-        # Dict of DF and labels used to get and store Sparsity results
+
+        # Dict of DF and labels used to get and store results
         label_dict = {"wb": (wb_summary, hemis),
-                      "R": (R_sparsity, ["R"]),
-                      "L": (L_sparsity, ["L"])}
+                      "R": (R_summary, ["R"]),
+                      "L": (L_summary, ["L"])}
+
         for key in label_dict:
             (df, labels) = label_dict[key]
-            sparsity_results = {label: get_hemi_sparsity(img_d[key], label,
-                                threshold=sparsity_threshold, memory=memory)
-                                for label in labels}  # {label: (pos_arr, neg_arr, abs_arr)}
 
-            for i, s_type in enumerate(sparsityTypes):
+            # 1-1) Sparsity
+            # sparsity_results = {label: sparsity_dict}
+            sparsity_results = {label: get_hemi_sparsity(img_d[key], label,
+                                thr=sparsity_threshold) for label in labels}
+
+            for s_type in sparsityTypes:
                 for label in labels:
                     df["%s_%s" % (s_type, label)] = sparsity_results[label][s_type]
-                # For wb only, also compute Total (both hemi) sparsity and HPAI
-                if key == "wb":
-                    df["%sTotal" % s_type] = df["%s_R" % s_type] + df["%s_L" % s_type]
-                    # Calculate HPAI using vc-sparsity
-                    if "vc" in s_type:
-                        # Get n_voxels in each hemi to adjust for the differences in
-                        # n_voxels in each hemi when calculating HPAI
-                        R_ratio = df["%s_R" % s_type] / sparsity_results["R"]["n_voxels"]
-                        L_ratio = df["%s_L" % s_type] / sparsity_results["L"]["n_voxels"]
-                        df["%sHPAI" % s_type] = (R_ratio - L_ratio) / (R_ratio + L_ratio)
 
-        # Save R/L_sparsity DFs
-        R_sparsity.to_csv(op.join(out_dir, "R_sparsity.csv"))
-        L_sparsity.to_csv(op.join(out_dir, "L_sparsity.csv"))
+            # 1-2) ACNI
+            for label in labels:
+                df["ACNI_%s" % label] = calculate_acni(
+                    img_d[key], hemi=label, percentile=acni_percentile)
 
-        # 2) Get SSS of wb component images as well as matched RL images by passing
-        # 2 x wb or RL images and hemi labels to the compare_components (make sure
-        # not to flip signs when comparing R and L)
-        name_img_pairs = [("wb_SSS", img_d["wb"]),
-                          ("matchedRL_SSS", img_d["RL-unforced"])]
-        for (name, img) in name_img_pairs:
+            # 1-3) For wb only, also compute HPAI
+            if key == "wb":
+                hpai_d = calculate_hpai(img_d[key], percentile=hpai_percentile)
+                for sign in SPARSITY_SIGNS:
+                    df["%sHPAI" % sign] = hpai_d[sign]
+
+        # Save R/L_summary DFs
+        R_summary.to_csv(op.join(out_dir, "R_summary.csv"))
+        L_summary.to_csv(op.join(out_dir, "L_summary.csv"))
+
+        # 2) Get SSS of wb component images as well as matched RL images
+        col_img_pairs = [("wb_SSS", img_d["wb"]),
+                         ("matchedRL_SSS", img_d["RL-unforced"])]
+        for (col, img) in col_img_pairs:
             score_arr = compare_RL(img)
-            wb_summary[name] = score_arr
+            wb_summary[col] = score_arr
 
         # 3) Finally store indices of matched R, L, and RL components, and the
         # respective match scores against wb
@@ -189,7 +266,7 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
             # Save wb_summary
             wb_summary.to_csv(op.join(out_dir, "wb_summary.csv"))
 
-    return (wb_summary, R_sparsity, L_sparsity)
+    return (wb_summary, R_summary, L_summary)
 
 
 def generate_component_specific_plots(wb_master, components, scoring, out_dir=None):
@@ -252,13 +329,12 @@ def generate_component_specific_plots(wb_master, components, scoring, out_dir=No
             ax.set_ylim(0, 1)
             ax.spines['right'].set_color('none')
             ax.spines['top'].set_color('none')
-            ax.yaxis.set_ticks_position('left')
             ax.spines['left'].set_position(('data', 0))
             ax.xaxis.set_ticks_position('bottom')
             ax.spines['bottom'].set_position(('data', 0))
             plt.setp(ax, xticks=ticks, xticklabels=labels)
-        fh.text(0.04, 0.5, "Spatial Symmetry Score using %s" % scoring,
-                va='center', rotation='vertical')
+            fh.text(0.04, 0.5, "Spatial Symmetry Score using %s" % scoring,
+                    va='center', rotation='vertical')
 
         save_and_close(out_path)
 
@@ -269,9 +345,9 @@ def _generate_plot_1(wb_master, sparsity_threshold, out_dir):
 
     fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
     fh.suptitle("Hemispheric Participation Index for each component", fontsize=16)
-    hpai_styles = {'pos': ['r', 'lightpink', 'above %d' % sparsity_threshold],
-                   'neg': ['b', 'lightblue', 'below -%d' % sparsity_threshold],
-                   'abs': ['g', 'lightgreen', 'with abs value above %d' % sparsity_threshold]}
+    hpai_styles = {'pos': ['r', 'lightpink', 'above %0.7f' % sparsity_threshold],
+                   'neg': ['b', 'lightblue', 'below -%0.7f' % sparsity_threshold],
+                   'abs': ['g', 'lightgreen', 'with abs value above %0.7f' % sparsity_threshold]}
     by_comp = wb_master.groupby("n_comp")
     for ax, sign in zip(axes, SPARSITY_SIGNS):
         mean, sd = by_comp.mean()["vc-%sHPAI" % sign], by_comp.std()["vc-%sHPAI" % sign]
@@ -426,7 +502,7 @@ def _generate_plot_5(wb_master, scoring, out_dir):
 
 
 def loop_main_and_plot(components, scoring, dataset, query_server=True,
-                       force=False, sparsity_threshold=0.000005, max_images=np.inf,
+                       force=False, max_images=np.inf,
                        memory=Memory(cachedir='nilearn_cache')):
     """
     Loop main.py to plot summaries of WB vs hemi ICA components
@@ -454,27 +530,30 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
 
     # Use wb images to determine threshold for voxel count sparsity
     print("Getting sparsity threshold.")
-    sparsity_threshold = get_sparsity_threshold(images=imgs["wb"], percentile=99.9)
-    print("Using sparsity threshold of %0.6f" % sparsity_threshold)
-    # Loop again this time to get sparsity info as well matching scores
-    # and generate summary. Note that if force, summary are calculated again
-    # but ICA won't be repeated.
+    global_percentile = 99.9
+    sparsity_threshold = get_sparsity_threshold(
+        images=imgs["wb"], global_percentile=global_percentile)
+    print("Using global sparsity threshold of %0.8f for sparsity calculation"
+          % sparsity_threshold)
+
+    # Loop again this time to get values of interest and generate summary.
+    # Note that if force, summary are calculated again but ICA won't be repeated.
     (wb_master, R_master, L_master) = (pd.DataFrame() for i in range(3))
     for c in components:
         print("Running analysis with %d components" % c)
-        (wb_summary, R_sparsity, L_sparsity) = load_or_generate_summary(
+        (wb_summary, R_summary, L_summary) = load_or_generate_summary(
             images=images, term_scores=term_scores, n_components=c,
-            scoring=scoring, dataset=dataset, force=force,
-            sparsity_threshold=sparsity_threshold, memory=memory)
+            scoring=scoring, dataset=dataset, sparsity_threshold=sparsity_threshold,
+            acni_percentile=95.0, hpai_percentile=95.0, force=force, memory=memory)
         # Append them to master DFs
         wb_master = wb_master.append(wb_summary)
-        R_master = R_master.append(R_sparsity)
-        L_master = L_master.append(L_sparsity)
+        R_master = R_master.append(R_summary)
+        L_master = L_master.append(L_summary)
 
-    # Generate plots over a range of specified n_components ###
-    print "Generating plots for each n_components."
-    generate_component_specific_plots(
-        wb_master=wb_master, components=components, scoring=scoring, out_dir=out_dir)
+    # # Generate plots over a range of specified n_components ###
+    # print "Generating plots for each n_components."
+    # generate_component_specific_plots(
+    #     wb_master=wb_master, components=components, scoring=scoring, out_dir=out_dir)
 
     # Reset indices of master DFs and save
     master_DFs = dict(
@@ -484,13 +563,13 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         master_DFs[key].reset_index(inplace=True)
         master_DFs[key].to_csv(op.join(out_dir, '%s_summary.csv' % key))
 
-    # Generate main plots
-    print "Generating summary plots.."
-    _generate_plot_1(wb_master=wb_master, sparsity_threshold=sparsity_threshold,
-                     out_dir=out_dir)
-    _generate_plot_2_3(out_dir=out_dir, **master_DFs)
-    _generate_plot_4(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
-    _generate_plot_5(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
+    # # Generate main plots
+    # print "Generating summary plots.."
+    # _generate_plot_1(wb_master=wb_master, sparsity_threshold=sparsity_threshold,
+    #                  out_dir=out_dir)
+    # _generate_plot_2_3(out_dir=out_dir, **master_DFs)
+    # _generate_plot_4(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
+    # _generate_plot_5(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
 
 
 if __name__ == '__main__':
