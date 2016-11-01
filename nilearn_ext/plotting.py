@@ -241,7 +241,7 @@ def plot_component_comparisons(images, labels, score_mat, sign_mat,
                     label=labels[ii], sign=signs[ii])
 
                 if ii == 0:
-                    display = plot_stat_map(comp, axes=ax, title=title,    # noqa
+                    display = plot_stat_map(comp, axes=ax, title=title,    # noqaax.matchow color map
                                             black_bg=True, symmetric_cbar=True,
                                             vmax=vmax)
                 else:
@@ -269,7 +269,8 @@ def plot_comparison_matrix(score_mat, labels, scoring, normalize=True,
     # Plotting
     fh = plt.figure(figsize=(10, 10))
     ax = fh.gca()
-    cax = ax.matshow(score_mat, vmin=vmin, vmax=vmax)
+    cax = ax.matshow(score_mat, vmin=vmin, vmax=vmax, cmap="jet")
+    plt.grid(False)
     ax.set_xlabel("%s components" % (labels[1]))
     ax.set_ylabel("%s components" % (labels[0]))
     ax.set_xticks(idx), ax.set_xticklabels(x_idx)
