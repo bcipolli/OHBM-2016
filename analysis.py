@@ -174,17 +174,17 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
     For a given n_components, load summary csvs if they already exist, or
     run main.py to get and save necessary summary data required for plotting.
 
-    Returns (wb_summary, R_sparsity, L_sparsity), each of which are DataFrame.
+    Returns (wb_summary, R_summary, L_summary), each of which are DataFrame.
     """
     # Directory to find or save the summary csvs
     out_dir = out_dir or op.join('ica_imgs', dataset, 'analyses', str(n_components))
-    summary_csvs = ["wb_summary.csv", "R_sparsity.csv", "L_sparsity.csv"]
+    summary_csvs = ["wb_summary.csv", "R_summary.csv", "L_summary.csv"]
 
     # If summary data are already saved as csv files, simply load them
     if not force and all([op.exists(op.join(out_dir, csv)) for csv in summary_csvs]):
         print("Loading summary data from %s" % out_dir)
-        (wb_summary, R_sparsity, L_sparsity) = (pd.read_csv(op.join(out_dir, csv))
-                                                for csv in summary_csvs)
+        (wb_summary, R_summary, L_summary) = (pd.read_csv(op.join(out_dir, csv))
+                                              for csv in summary_csvs)
 
     # Otherwise run match analysis and save them as csv files
     else:
@@ -292,7 +292,7 @@ def generate_component_specific_plots(wb_master, components, scoring, out_dir=No
         size = wb_summary["rescaled_vc_abs"]
         ax = wb_summary.plot.scatter(x='posHPAI', y='negHPAI', c=color, s=size,
                                      xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), edgecolors="grey",
-                                     colormap='rainbow', colorbar=True, figsize=(7, 6))
+                                     colormap='rainbow_r', colorbar=True, figsize=(7, 6))
         title = ax.set_title("\n".join(wrap("The relationship between HPAI on "
                                             "positive and negative side: "
                                             "n_components = %d" % c, 60)))
@@ -347,7 +347,7 @@ def generate_component_specific_plots(wb_master, components, scoring, out_dir=No
 
 def _generate_plot_1(wb_master, sparsity_threshold, out_dir):
     # 1) HPAI-for pos, neg, and abs in wb components
-    print "Generating HPAI of wb components"
+    print "Plotting HPAI of wb components"
     out_path = op.join(out_dir, '1_wb_HPAI.png')
 
     fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
@@ -376,9 +376,9 @@ def _generate_plot_1(wb_master, sparsity_threshold, out_dir):
 
 def _generate_plot_2_3(wb_master, R_master, L_master, out_dir):
     # 2) VC and 3) L1 Sparsity comparison between wb and hemi components
-    print "Generating plots of sparsity for WB and hemi-components"
+    print "Plotting sparsity for WB and hemi-components"
+    # Prepare summary of sparsity for each hemisphere
     for hemi, hemi_df in zip(("R", "L"), (R_master, L_master)):
-        # Prepare summary of sparsity for each hemisphere
         wb_sparsity = wb_master[hemi_df.columns]
         wb_sparsity["decomposition_type"] = "wb"
         hemi_df["decomposition_type"] = hemi
@@ -455,7 +455,7 @@ def _generate_plot_4(wb_master, scoring, out_dir):
 def _generate_plot_5(wb_master, scoring, out_dir):
 
     # 5) SSS for wb components and matched RL components
-    print "SSS for wb components"
+    print "Plotting SSS for wb components"
     title = "Spatial Symmetry Score for WB and the matched RL components"
     xlabel = "Number of components"
     ylabel = "Spatial Symmetry Score using %s " % scoring
@@ -481,7 +481,7 @@ def _generate_plot_5(wb_master, scoring, out_dir):
 
     # first plot lines between individual plots
     for i in range(len(wb_master.index)):
-        linestyle = "-" if (wb_master.wb_SSS[i] - wb_master.matchedRL_SSS[i]) > 0 else "--"
+        linestyle = "-" if (wb_master.wb_SSS[i] - wb_master.matchedRL_SSS[i]) < 0 else "--"
         plt.plot([wb_master.n_comp.astype(int)[i] - 1, wb_master.n_comp.astype(int)[i] + 1],
                  [wb_master.wb_SSS[i], wb_master.matchedRL_SSS[i]],
                  c="grey", linestyle=linestyle, linewidth=1.0)
@@ -505,6 +505,35 @@ def _generate_plot_5(wb_master, scoring, out_dir):
     plt.scatter(comp_arr + 1, by_comp.matchedRL_SSS.mean(), c=colors[5], s=80, marker="+")
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
+
+    save_and_close(out_path, fh=fh)
+
+
+def _generate_plot_6(wb_master, R_master, L_master, out_dir):
+    # 6) Plot ACNI for wb and hemi-components
+    print "Generating plots of ACNI for wb and hemi-components"
+    # Prepare ACNI for wb and hemi-components
+    acni_cols = ["n_comp", "ACNI", "decomposition_type"]
+    acni_summary = pd.DataFrame(columns=acni_cols)
+    hemis = ("wb", "R", "L")
+    master_DFs = (wb_master, R_master, L_master)
+    for hemi, df in zip(hemis, master_DFs):
+        acni = df[["n_comp", "ACNI_%s" % hemi]]
+        acni["decomposition_type"] = hemi
+        acni.columns = acni_cols
+        acni_summary = acni_summary.append(acni)
+    acni_summary["n_comp"] = acni_summary.n_comp.astype(int)
+    out_path = op.join(out_dir, "6_ACNI_comparison.png")
+
+    fh = plt.figure(figsize=(10, 6))
+    ax = fh.gca()
+    title = "\n".join(wrap("Anti-Correlated Network Index of each component: "
+                           "Comparison of WB and R- or L-only decomposition", 60))
+    plt.title(title, fontsize=16)
+    sns.boxplot(x="n_comp", y="ACNI", ax=ax, hue="decomposition_type",
+                data=acni_summary, palette="Set2")
+    ax.set_xlabel("Number of components")
+    ax.set_ylabel("Proportion of Anti-Correlated Network")
 
     save_and_close(out_path, fh=fh)
 
@@ -584,6 +613,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     _generate_plot_2_3(out_dir=out_dir, **master_DFs)
     _generate_plot_4(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
     _generate_plot_5(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
+    _generate_plot_6(out_dir=out_dir, **master_DFs)
 
 
 if __name__ == '__main__':
