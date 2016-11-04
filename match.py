@@ -6,6 +6,7 @@ import os.path as op
 
 import nibabel as nib
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
 from nilearn import datasets
 from nilearn.image import index_img, math_img
@@ -16,7 +17,7 @@ from nilearn_ext.decomposition import compare_components, generate_components
 from nilearn_ext.plotting import (plot_component_comparisons, plot_components,
                                   plot_components_summary, plot_comparison_matrix,
                                   plot_term_comparisons)
-from nilearn_ext.utils import get_ic_terms, get_match_idx_pair
+from nilearn_ext.utils import get_ic_terms, get_n_terms, get_match_idx_pair
 
 
 def load_or_generate_components(hemi, out_dir='.', plot_dir=None, force=False,
@@ -124,6 +125,99 @@ def get_dataset(dataset, max_images=np.inf, **kwargs):
     return images, term_scores
 
 
+def load_or_generate_term_comparisons(imgs_list, img_labels, ic_idx_list, sign_list, force=False,
+                                      top_n=5, bottom_n=5, standardize=True, out_dir=None):
+    """
+    For a given list of ICA image terms, compare the term scores for the top_n and
+    bottom_n associated with each image and return comparison summary df.
+
+    The sign_list should indicate whether term values should be flipped (-1) or not (1).
+
+    If force=False and the termscore summary is already present in the out_dir, simply
+    open and return the summary as df.
+    """
+    termscores_summary_csv = op.join(out_dir, "termscores_summary.csv")
+    if not force and op.exists(termscores_summary_csv):
+        print "Found termscores summary csv in %s: Loading the dataframe..." % out_dir
+        termscores_summary = pd.read_csv(termscores_summary_csv)
+    else:
+        assert len(imgs_list) == len(img_labels)
+        assert len(imgs_list) == len(ic_idx_list)
+        assert len(imgs_list) == len(sign_list)
+        n_comp = imgs_list[0].shape[-1]
+        for i in range(len(imgs_list)):
+            assert imgs_list[i].shape[-1] == n_comp
+            assert len(ic_idx_list[i]) == n_comp
+            assert len(sign_list[i]) == n_comp
+            assert imgs_list[i].terms is not None
+
+            terms = [img.terms for img in imgs_list]
+
+        # iterate over the ic_idx_list and sign_list for each image and
+        # store top n and bottom n terms for each label as well as their scores
+        termscore_dfs = []
+        term_arr = np.empty((len(img_labels), n_comp, top_n + bottom_n), dtype="S30")
+        for n in range(n_comp):
+            terms_of_interest = []
+            term_vals = []
+            name = ''
+            for i, (term, label) in enumerate(zip(terms, img_labels)):
+                idx = ic_idx_list[i][n]
+                sign = sign_list[i][n]
+
+                # Construct name for the comparison
+                name += label + '[%d] ' % (idx)
+
+                # Get list of top n and bottom n terms for each term list
+                top_terms = get_n_terms(
+                    term, idx, n_terms=top_n, top_bottom='top', sign=sign)
+                bottom_terms = get_n_terms(
+                    term, idx, n_terms=bottom_n, top_bottom='bottom', sign=sign)
+                combined = np.append(top_terms, bottom_terms)
+                terms_of_interest.append(combined)
+                term_arr[i][n] = combined
+
+                # Also store term vals (z-score if standardize) for each list
+                t, vals = get_ic_terms(term, idx, sign=sign, standardize=standardize)
+                s = pd.Series(vals, index=t, name=label)
+                term_vals.append(s)
+
+            # Data for all the terms
+            termscore_df = pd.concat(term_vals, axis=1)
+
+            # Get unique terms from terms_of_interest list
+            toi_unique = np.unique(terms_of_interest)
+
+            # Get values for unique terms_of_interest and save
+            data = termscore_df.loc[toi_unique]
+            data = data.sort_values(list(img_labels), ascending=False)
+            data.insert(0, "terms", data.index)
+            data.reset_index(drop=True, inplace=True)
+            for i, label in reversed(list(enumerate(img_labels))):
+                idx = int(ic_idx_list[i][n])
+                sign = int(sign_list[i][n])
+                data.insert(0, "%s_idx" % label, idx * sign)
+            termscore_dfs.append(data)
+
+        # Save two summary csvs, one with term scores and the other with
+        # top n and bottom n terms for each comparison
+        # 1) termscore summary
+        termscores_summary = pd.concat(termscore_dfs, axis=0)
+        termscores_summary.to_csv(op.join(out_dir, 'termscores_summary.csv'), index=False)
+
+        # 2) term summary
+        term_dfs = []
+        term_cols = ["top%d" % (n + 1) for n in range(top_n)] + ["bottom%d" % (n + 1) for n in range(bottom_n)]
+        for i, label in enumerate(img_labels):
+            term_df = pd.DataFrame(term_arr[i], columns=["%s_%s" % (label, col) for col in term_cols])
+            term_df.insert(0, "%s_idx" % label, np.multiply(ic_idx_list[i].astype(int), sign_list[i].astype(int)))
+            term_dfs.append(term_df)
+        term_summary = pd.concat(term_dfs, axis=1)
+        term_summary.to_csv(op.join(out_dir, 'term_summary.csv'), index=False)
+
+    return termscores_summary
+
+
 def do_match_analysis(dataset, images, term_scores, key="wb", n_components=20,
                       plot=True, max_images=np.inf, scoring='l1norm',
                       query_server=True, force=False, nii_dir=None,
@@ -221,23 +315,28 @@ def do_match_analysis(dataset, images, term_scores, key="wb", n_components=20,
                                        score_mat=score_mat, sign_mat=sign_mat,
                                        force=force_match, out_dir=plot_sub_dir)
 
-            # Show term comparisons between the matched wb, R and L components
-            match, unmatch = get_match_idx_pair(score_mat, sign_mat, force=force_match)
-            terms = [imgs[hemi].terms for hemi in hemis]
+        # Compare terms between the matched wb, R and L components
+        match, unmatch = get_match_idx_pair(score_mat, sign_mat, force=force_match)
+        imgs_list = [imgs[hemi] for hemi in hemis]
 
-            # component index list for wb, R and L
-            wb_idx_arr = match["idx"][0]
-            r_idx_arr, l_idx_arr = [arr[match["idx"][1]] for arr in rl_idx_pair]
-            ic_idx_list = [wb_idx_arr, r_idx_arr, l_idx_arr]
+        # component index list for wb, R and L
+        wb_idx_arr = match["idx"][0]
+        r_idx_arr, l_idx_arr = [arr[match["idx"][1]] for arr in rl_idx_pair]
+        ic_idx_list = [wb_idx_arr, r_idx_arr, l_idx_arr]
 
-            # sign flipping list for wb, R and L
-            wb_sign_arr = match["sign"][0]
-            r_sign_arr, l_sign_arr = [match["sign"][1] * arr[match["idx"][1]] for arr in rl_sign_pair]
-            sign_list = [wb_sign_arr, r_sign_arr, l_sign_arr]
+        # sign flipping list for wb, R and L
+        wb_sign_arr = match["sign"][0]
+        r_sign_arr, l_sign_arr = [match["sign"][1] * arr[match["idx"][1]] for arr in rl_sign_pair]
+        sign_list = [wb_sign_arr, r_sign_arr, l_sign_arr]
 
-            plot_term_comparisons(terms, labels=hemis, ic_idx_list=ic_idx_list,
-                                  sign_list=sign_list, color_list=['g', 'r', 'b'],
-                                  top_n=5, bottom_n=5, standardize=True, out_dir=plot_sub_dir)
+        termscores_summary = load_or_generate_term_comparisons(
+            imgs_list=imgs_list, img_labels=hemis, ic_idx_list=ic_idx_list,
+            sign_list=sign_list, top_n=5, bottom_n=5, standardise=True, force=force,
+            out_dir=plot_sub_dir)
+
+        if plot:
+            plot_term_comparisons(termscores_summary, labels=hemis, color_list=['g', 'r', 'b'],
+                                  out_dir=plot_sub_dir)
 
     return imgs, score_mats, sign_mats
 
