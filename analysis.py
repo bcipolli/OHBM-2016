@@ -284,13 +284,15 @@ def generate_component_specific_plots(wb_master, components, scoring, out_dir=No
         # 1) Relationship between positive and negative HPAI in wb components
         out_path = op.join(comp_outdir, "1_PosNegHPAI_%dcomponents.png" % c)
 
-        # set color to be the proportion of pos relative to abs (% posTotal)
-        # 0.5 more anti-correlated network, 1 no anti-correlated network
-        color = (wb_summary['vc-posTotal'] / wb_summary['vc-absTotal'])
-        size = rescale(wb_summary['vc-absTotal'])
-        ax = wb_summary.plot.scatter(x='vc-posHPAI', y='vc-negHPAI', c=color, s=size,
+        # set color to the ACNI: ranging from 0 to 1 and reflects the proportion
+        # of anti-correlated network (higher vals indicate strong ACN)
+        color = wb_summary["ACNI_wb"]
+
+        # size is proportional to vc-abs_wb
+        size = wb_summary["rescaled_vc_abs"]
+        ax = wb_summary.plot.scatter(x='posHPAI', y='negHPAI', c=color, s=size,
                                      xlim=(-1.1, 1.1), ylim=(-1.1, 1.1), edgecolors="grey",
-                                     colormap='PuRd', colorbar=True, figsize=(7, 6))
+                                     colormap='rainbow', colorbar=True, figsize=(7, 6))
         title = ax.set_title("\n".join(wrap("The relationship between HPAI on "
                                             "positive and negative side: "
                                             "n_components = %d" % c, 60)))
@@ -308,7 +310,7 @@ def generate_component_specific_plots(wb_master, components, scoring, out_dir=No
         title.set_y(1.05)
         f.subplots_adjust(top=0.8)
         cax = f.get_axes()[1]
-        cax.set_ylabel('Proportion of pos (lower vals indicate anti-correlated network)',
+        cax.set_ylabel('Proportion of anti-correlated network',
                        rotation=270, labelpad=20)
 
         save_and_close(out_path)
@@ -319,11 +321,15 @@ def generate_component_specific_plots(wb_master, components, scoring, out_dir=No
         fh, axes = plt.subplots(1, 3, sharey=True, figsize=(18, 6))
         fh.suptitle("The relationship between HPAI values and SSS: "
                     "n_components = %d" % c, fontsize=16)
-        hpai_sign_colors = {'pos': 'r', 'neg': 'b', 'abs': 'g'}
+        colors = sns.color_palette("Paired", 6)
+        hpai_colors = {'pos': (colors[4], colors[5]),
+                       'neg': (colors[0], colors[1]),
+                       'abs': (colors[2], colors[3])}
         for ax, sign in zip(axes, SPARSITY_SIGNS):
-            size = rescale(wb_summary['vc-%sTotal' % sign]) * 2
-            ax.scatter(wb_summary['vc-%sHPAI' % sign], wb_summary['wb_SSS'],
-                       c=hpai_sign_colors[sign], s=size, edgecolors="grey")
+            size = wb_summary['rescaled_vc_%s' % sign]
+            ax.scatter(wb_summary['%sHPAI' % sign], wb_summary['wb_SSS'],
+                       c=hpai_colors[sign][0], s=size,
+                       edgecolors=hpai_colors[sign][1])
             ax.set_xlabel("%s HPAI" % sign)
             ax.set_xlim(-1.1, 1.1)
             ax.set_ylim(0, 1)
@@ -341,26 +347,28 @@ def generate_component_specific_plots(wb_master, components, scoring, out_dir=No
 
 def _generate_plot_1(wb_master, sparsity_threshold, out_dir):
     # 1) HPAI-for pos, neg, and abs in wb components
+    print "Generating HPAI of wb components"
     out_path = op.join(out_dir, '1_wb_HPAI.png')
 
     fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
-    fh.suptitle("Hemispheric Participation Index for each component", fontsize=16)
-    hpai_styles = {'pos': ['r', 'lightpink', 'above %0.7f' % sparsity_threshold],
-                   'neg': ['b', 'lightblue', 'below -%0.7f' % sparsity_threshold],
-                   'abs': ['g', 'lightgreen', 'with abs value above %0.7f' % sparsity_threshold]}
+    fh.suptitle("Hemispheric Participation Asymmetry Index for each component", fontsize=16)
+    colors = sns.color_palette("Paired", 6)
+    hpai_styles = {'pos': (colors[4], colors[5], 'for correlated network'),
+                   'neg': (colors[0], colors[1], 'for anti-correlated network'),
+                   'abs': (colors[2], colors[3], 'overall')}
     by_comp = wb_master.groupby("n_comp")
     for ax, sign in zip(axes, SPARSITY_SIGNS):
-        mean, sd = by_comp.mean()["vc-%sHPAI" % sign], by_comp.std()["vc-%sHPAI" % sign]
+        mean, sd = by_comp.mean()["%sHPAI" % sign], by_comp.std()["%sHPAI" % sign]
         ax.fill_between(components, mean + sd, mean - sd, linewidth=0,
-                        facecolor=hpai_styles[sign][1], alpha=0.5)
-        size = rescale(wb_master['vc-%sTotal' % (sign)])
-        ax.scatter(wb_master.n_comp, wb_master["vc-%sHPAI" % sign], label=sign,
-                   c=hpai_styles[sign][0], s=size, edgecolors="grey")
-        ax.plot(components, mean, c=hpai_styles[sign][0])
+                        facecolor=hpai_styles[sign][0], alpha=0.5)
+        size = wb_master['rescaled_vc_%s' % (sign)]
+        ax.scatter(wb_master.n_comp, wb_master["%sHPAI" % sign], label=sign,
+                   c=hpai_styles[sign][1], s=size, edgecolors="grey")
+        ax.plot(components, mean, c=hpai_styles[sign][1])
         ax.set_xlim((0, components[-1] + 5))
         ax.set_ylim((-1, 1))
         ax.set_xticks(components)
-        ax.set_ylabel("HPAI((R-L)/(R+L) for # of voxels %s)" % (hpai_styles[sign][2]))
+        ax.set_ylabel("HPAI((R-L)/(R+L) %s" % (hpai_styles[sign][2]))
     fh.text(0.5, 0.04, "Number of components", ha="center")
 
     save_and_close(out_path, fh=fh)
@@ -368,7 +376,7 @@ def _generate_plot_1(wb_master, sparsity_threshold, out_dir):
 
 def _generate_plot_2_3(wb_master, R_master, L_master, out_dir):
     # 2) VC and 3) L1 Sparsity comparison between wb and hemi components
-    print "more plots, of sparsity."
+    print "Generating plots of sparsity for WB and hemi-components"
     for hemi, hemi_df in zip(("R", "L"), (R_master, L_master)):
         # Prepare summary of sparsity for each hemisphere
         wb_sparsity = wb_master[hemi_df.columns]
@@ -410,7 +418,7 @@ def _generate_plot_2_3(wb_master, R_master, L_master, out_dir):
 def _generate_plot_4(wb_master, scoring, out_dir):
 
     # 4) Matching results: average matching scores and proportion of unmatched
-    print "Matching results"
+    print "Plotting matching results"
     out_path = op.join(out_dir, '4_Matching_results_box.png')
     score_cols = ["matchR_score", "matchL_score", "matchRL-unforced_score"]
     match_scores = pd.melt(wb_master[["n_comp"] + score_cols], id_vars="n_comp",
@@ -550,11 +558,6 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         R_master = R_master.append(R_summary)
         L_master = L_master.append(L_summary)
 
-    # # Generate plots over a range of specified n_components ###
-    # print "Generating plots for each n_components."
-    # generate_component_specific_plots(
-    #     wb_master=wb_master, components=components, scoring=scoring, out_dir=out_dir)
-
     # Reset indices of master DFs and save
     master_DFs = dict(
         wb_master=wb_master, R_master=R_master, L_master=L_master)
@@ -563,13 +566,24 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
         master_DFs[key].reset_index(inplace=True)
         master_DFs[key].to_csv(op.join(out_dir, '%s_summary.csv' % key))
 
-    # # Generate main plots
-    # print "Generating summary plots.."
-    # _generate_plot_1(wb_master=wb_master, sparsity_threshold=sparsity_threshold,
-    #                  out_dir=out_dir)
-    # _generate_plot_2_3(out_dir=out_dir, **master_DFs)
-    # _generate_plot_4(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
-    # _generate_plot_5(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
+    # Generate plots
+    # To set size proportional to vc sparsity in several graphs, add columns with
+    # vc vals
+    for sign in SPARSITY_SIGNS:
+        wb_master["rescaled_vc_%s" % sign] = rescale(wb_master["vc-%s_wb" % sign])
+
+    # 1) Component-specific plots
+    print "Generating plots for each n_components."
+    generate_component_specific_plots(
+        wb_master=wb_master, components=components, scoring=scoring, out_dir=out_dir)
+
+    # 2) Main summary plots over the range of n_components
+    print "Generating summary plots.."
+    _generate_plot_1(wb_master=wb_master, sparsity_threshold=sparsity_threshold,
+                     out_dir=out_dir)
+    _generate_plot_2_3(out_dir=out_dir, **master_DFs)
+    _generate_plot_4(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
+    _generate_plot_5(wb_master=wb_master, scoring=scoring, out_dir=out_dir)
 
 
 if __name__ == '__main__':

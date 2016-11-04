@@ -68,9 +68,9 @@ def nice_bounds(axis_start, axis_end, num_ticks=8):
 
 
 def rescale(arr, val_range=(10, 200)):
-    '''
+    """
     Rescale array to the given range of numbers
-    '''
+    """
     new_arr = ((float(val_range[1]) - val_range[0]) * (arr - arr.min()) /
                (arr.max() - arr.min())) + float(val_range[0])
 
