@@ -169,7 +169,8 @@ def calculate_hpai(wb_img, percentile=95.0):
 
 def load_or_generate_summary(images, term_scores, n_components, scoring, dataset,
                              sparsity_threshold, acni_percentile=95.0, hpai_percentile=95.0,
-                             force=False, out_dir=None, memory=Memory(cachedir='nilearn_cache')):
+                             force=False, plot=True, out_dir=None,
+                             memory=Memory(cachedir='nilearn_cache')):
     """
     For a given n_components, load summary csvs if they already exist, or
     run main.py to get and save necessary summary data required for plotting.
@@ -199,7 +200,7 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
         match_method = 'wb'
         img_d, score_mats_d, sign_mats_d = do_match_analysis(
             dataset=dataset, images=images, term_scores=term_scores,
-            key=match_method, force=False, plot=force,
+            key=match_method, force=False, plot=plot,
             plot_dir=out_dir, n_components=n_components, scoring=scoring)
 
         # 1) For each of "wb", "R", and "L" image, get sparsity and ACNI
@@ -539,7 +540,7 @@ def _generate_plot_6(wb_master, R_master, L_master, out_dir):
 
 
 def loop_main_and_plot(components, scoring, dataset, query_server=True,
-                       force=False, max_images=np.inf,
+                       force=False, plot=True, max_images=np.inf,
                        memory=Memory(cachedir='nilearn_cache')):
     """
     Loop main.py to plot summaries of WB vs hemi ICA components
@@ -562,7 +563,8 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
                           n_components=c, term_scores=term_scores,
                           out_dir=nii_dir, memory=memory)
 
-            img = load_or_generate_components(hemi=hemi, force=force, **kwargs)
+            img = load_or_generate_components(
+                hemi=hemi, force=force, no_plot=not plot, **kwargs)
             imgs[hemi].append(img)
 
     # Use wb images to determine threshold for voxel count sparsity
@@ -629,6 +631,7 @@ if __name__ == '__main__':
     parser = ArgumentParser(description="Really?")
     parser.add_argument('--force', action='store_true', default=False)
     parser.add_argument('--offline', action='store_true', default=False)
+    parser.add_argument('--no-plot', action='store_true', default=False)
     parser.add_argument('--components', nargs='?',
                         default="5,10,15,20,25,30,35,40,45,50")
     parser.add_argument('--dataset', nargs='?', default='neurovault',
@@ -640,7 +643,8 @@ if __name__ == '__main__':
 
     # Alias args
     query_server = not args.pop('offline')
+    plot = not args.pop('no_plot')
     components = [int(c) for c in args.pop('components').split(',')]
 
     loop_main_and_plot(
-        components=components, query_server=query_server, **args)
+        components=components, query_server=query_server, plot=plot, **args)

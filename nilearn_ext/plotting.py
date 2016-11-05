@@ -162,8 +162,8 @@ def plot_components_summary(ica_image, hemi='', out_dir=None,
             save_and_close(out_path)
 
 
-def plot_component_comparisons(images, labels, score_mat, sign_mat,
-                               force=False, out_dir=None):
+def plot_matched_components(images, labels, score_mat, sign_mat,
+                            force=False, out_dir=None):
     """
     Uses the score_mat to match up two images. If force, one-to-one matching
     is forced.
