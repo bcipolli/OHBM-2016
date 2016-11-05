@@ -633,7 +633,7 @@ if __name__ == '__main__':
     parser.add_argument('--offline', action='store_true', default=False)
     parser.add_argument('--no-plot', action='store_true', default=False)
     parser.add_argument('--components', nargs='?',
-                        default="5,10,15,20,25,30,35,40,45,50")
+                        default="5,10,15,20,30,40,50,75,100")
     parser.add_argument('--dataset', nargs='?', default='neurovault',
                         choices=['neurovault', 'abide', 'nyu'])
     parser.add_argument('--scoring', nargs='?', default='correlation',
