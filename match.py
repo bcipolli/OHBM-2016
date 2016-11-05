@@ -346,12 +346,13 @@ def do_match_analysis(dataset, images, term_scores, key="wb", n_components=20,
 
         termscores_summary = load_or_generate_term_comparisons(
             imgs_list=imgs_list, img_labels=hemis, ic_idx_list=ic_idx_list,
-            sign_list=sign_list, top_n=5, bottom_n=5, standardise=True, force=force,
+            sign_list=sign_list, top_n=5, bottom_n=5, standardize=True, force=force,
             out_dir=plot_sub_dir)
 
         if plot:
-            plot_term_comparisons(termscores_summary, labels=hemis, color_list=['g', 'r', 'b'],
-                                  out_dir=plot_sub_dir)
+            for plot_type in ("heatmap", "rader"):
+                plot_term_comparisons(
+                    termscores_summary, labels=hemis, plot_type=plot_type, out_dir=plot_sub_dir)
 
     return imgs, score_mats, sign_mats
 
@@ -414,7 +415,7 @@ if __name__ == '__main__':
                         dest='random_state')
     parser.add_argument('--scoring', nargs='?', default='l1norm',
                         choices=['l1norm', 'l2norm', 'correlation'])
-    parser.add_argument('--max_images', nargs='?', type=int, default=np.inf)
+    parser.add_argument('--max-images', nargs='?', type=int, default=np.inf)
     args = vars(parser.parse_args())
 
     # Run qc

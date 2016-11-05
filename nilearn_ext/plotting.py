@@ -7,6 +7,7 @@ import os.path as op
 
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from matplotlib import pyplot as plt
 from nilearn import datasets
 from nilearn.image import iter_img, index_img, math_img
@@ -282,100 +283,64 @@ def plot_comparison_matrix(score_mat, labels, scoring, normalize=True,
             prefix, labels[0], labels[1], '-normalized' if normalize else '')))
 
 
-def plot_term_comparisons(terms, labels, ic_idx_list, sign_list, color_list=('g', 'r', 'b'),
-                          top_n=4, bottom_n=4, standardize=True, out_dir=None):
+def plot_term_comparisons(termscores_summary, labels, plot_type="heatmap",
+                          color_list=('g', 'r', 'b'), out_dir=None):
     """
-    Take the list of ica image terms and the indices of components to be compared, and
-    plots the top n and bottom n term values for each component as a radar graph.
+    Take the termscores summary DF and plot the term values for the given labels
+    as a heatmap or radar graph (plot_type="heatmap" or "rader").
 
-    The sign_list should indicate whether term values should be flipped (-1) or not (1).
+    The labels should be found in the DF column names.
     """
-    assert len(terms) == len(labels)
-    assert len(terms) == len(ic_idx_list)
-    assert len(terms) == len(sign_list)
-    assert len(terms) == len(color_list)
-    n_comp = len(ic_idx_list[0])   # length of each ic_idx_list and sign_list
-    for i in range(len(terms)):
-        assert len(ic_idx_list[i]) == n_comp
-        assert len(sign_list[i]) == n_comp
+    for label in labels:
+        assert label in termscores_summary.columns
+        assert "%s_idx" % label in termscores_summary.columns
 
-    # iterate over the ic_idx_list and sign_list for each term and plot
-    # store top n and bottom n terms for each label
-    term_arr = np.empty((len(labels), n_comp, top_n + bottom_n), dtype="S30")
-    for n in range(n_comp):
+    # iterate over the set of ic indices for each label and plot terms
+    # and term scores
+    idx_cols = ["%s_idx" % label for label in labels]
+    for name, group in termscores_summary.groupby(idx_cols):
+        comparison_name = "_".join("%s[%d]" % (label, idx) for label, idx in zip(labels, name))
+        title = "Term comparisons for %scomponents" % (comparison_name.replace("_", " "))
 
-        terms_of_interest = []
-        term_vals = []
-        name = ''
+        # Get term scores for all the labels
+        data = group[["terms"] + list(labels)]
+        data = data.set_index("terms")
 
-        for i, (term, label) in enumerate(zip(terms, labels)):
-            idx = ic_idx_list[i][n]
-            sign = sign_list[i][n]
-            # Get list of top n and bottom n terms for each term list
-            top_terms = get_n_terms(
-                term, idx, n_terms=top_n, top_bottom='top', sign=sign)
-            bottom_terms = get_n_terms(
-                term, idx, n_terms=bottom_n, top_bottom='bottom', sign=sign)
-            combined = np.append(top_terms, bottom_terms)
-            terms_of_interest.append(combined)
-            term_arr[i][n] = combined
+        if plot_type == "rader":
+            out_path = op.join(out_dir, '%sterm_comparisons_rader.png' % comparison_name)
+            N = len(group)
+            theta = radar_factory(N)
+            fig = plt.figure(figsize=(10, 8))
+            ax = fig.add_subplot(1, 1, 1, projection='radar')
 
-            # Also store term vals (z-score if standardize) for each list
-            t, vals = get_ic_terms(term, idx, sign=sign, standardize=standardize)
-            s = pd.Series(vals, index=t, name=label)
-            term_vals.append(s)
+            ax.set_title(title, weight='bold', size='medium', position=(0.5, 1.1),
+                         horizontalalignment='center', verticalalignment='center')
 
-            # Construct name for the comparison
-            name += label + '[%d] ' % (idx)
+            y_min, y_max, y_tick = nice_bounds(data.values.min(), data.values.max())
+            ax.set_ylim(y_min, y_max)
+            ax.set_yticks([0], minor=True)
+            ax.set_yticks(y_tick)
+            ax.yaxis.grid(which='major', linestyle=':')
+            ax.yaxis.grid(which='minor', linestyle='-')
 
-        # Data for all the terms
-        termscore_df = pd.concat(term_vals, axis=1)
+            for label, color in zip(labels, color_list):
+                ax.plot(theta, data[label], color=color)
+                ax.fill(theta, data[label], facecolor=color, alpha=0.25)
+            ax.set_varlabels(data.index.values)
 
-        # Get unique terms from terms_of_interest list
-        toi_unique = np.unique(terms_of_interest)
+            legend = plt.legend(labels, loc=(1.1, 0.9), labelspacing=0.1)
+            plt.setp(legend.get_texts(), fontsize='small')
 
-        # Get values for unique terms_of_interest
-        data = termscore_df.loc[toi_unique]
-        data = data.sort_values(list(labels), ascending=False)
+        elif plot_type == "heatmap":
+            out_path = op.join(out_dir, '%sterm_comparisons_hm.png' % comparison_name)
+            fig, ax = plt.subplots(figsize=(10, 8))
+            ax.set_title(title, weight='bold', size='medium', position=(0.5, 1.1),
+                         horizontalalignment='center', verticalalignment='center')
+            sns.heatmap(data, center=0.0, ax=ax, cbar=True)
 
-        # Now plot radar!
-        N = len(toi_unique)
-        theta = radar_factory(N)
-        fig = plt.figure(figsize=(10, 8))
-        ax = fig.add_subplot(1, 1, 1, projection='radar')
-        title = "Term comparisons for %scomponents" % (name)
-        ax.set_title(title, weight='bold', size='medium', position=(0.5, 1.1),
-                     horizontalalignment='center', verticalalignment='center')
-
-        y_min, y_max, y_tick = nice_bounds(data.values.min(), data.values.max())
-        ax.set_ylim(y_min, y_max)
-        ax.set_yticks([0], minor=True)
-        ax.set_yticks(y_tick)
-        ax.yaxis.grid(which='major', linestyle=':')
-        ax.yaxis.grid(which='minor', linestyle='-')
-
-        for label, color in zip(labels, color_list):
-            ax.plot(theta, data[label], color=color)
-            ax.fill(theta, data[label], facecolor=color, alpha=0.25)
-        ax.set_varlabels(data.index.values)
-
-        legend = plt.legend(labels, loc=(1.1, 0.9), labelspacing=0.1)
-        plt.setp(legend.get_texts(), fontsize='small')
-#        plt.show()
+        else:
+            raise NotImplementedError(plot_type)
 
         # Saving
         if out_dir is not None:
-            save_and_close(
-                out_path=op.join(out_dir, '%sterm_comparisons.png' % (
-                    name.replace(" ", "_"))))
-
-    # Save top n and bottom n terms for each label
-    term_dfs = []
-    col_names = ["top%d" % (n + 1) for n in range(top_n)] + ["bottom%d" % (n + 1) for n in range(bottom_n)]
-    for i, label in enumerate(labels):
-        term_df = pd.DataFrame(term_arr[i], columns=["%s_%s" % (label, col) for col in col_names])
-        term_df.insert(0, "%s_idx" % (label), ic_idx_list[i])
-        term_dfs.append(term_df)
-    all_term_df = pd.concat(term_dfs, axis=1)
-    out_file = op.join(out_dir, 'term_comparison_summary.csv')
-    all_term_df.to_csv(out_file)
+            save_and_close(out_path=out_path)
