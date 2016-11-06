@@ -378,6 +378,9 @@ def _generate_plot_1(wb_master, sparsity_threshold, out_dir):
 def _generate_plot_2_3(wb_master, R_master, L_master, out_dir):
     # 2) VC and 3) L1 Sparsity comparison between wb and hemi components
     print "Plotting sparsity for WB and hemi-components"
+    pastel2 = sns.color_palette("Pastel2")
+    set2 = sns.color_palette("Set2")
+    hemi_colors = {"R": [set2[2], pastel2[2]], "L": [set2[0], pastel2[0]]}
     # Prepare summary of sparsity for each hemisphere
     for hemi, hemi_df in zip(("R", "L"), (R_master, L_master)):
         wb_sparsity = wb_master[hemi_df.columns]
@@ -391,9 +394,14 @@ def _generate_plot_2_3(wb_master, R_master, L_master, out_dir):
         fh, axes = plt.subplots(1, 3, sharex=True, sharey=True, figsize=(18, 6))
         fh.suptitle("Voxel Count Sparsity of each component: Comparison of WB "
                     "and %s-only decomposition" % hemi, fontsize=16)
+        colors = sns.color_palette("Paired", 6)
+        sparsity_styles = {'pos': [colors[5], colors[4]],
+                           'neg': [colors[1], colors[0]],
+                           'abs': [colors[3], colors[2]]}
         for ax, sign in zip(axes, SPARSITY_SIGNS):
             sns.boxplot(x="n_comp", y="vc-%s_%s" % (sign, hemi), ax=ax,
-                        hue="decomposition_type", data=sparsity_summary)
+                        hue="decomposition_type", data=sparsity_summary,
+                        palette=sparsity_styles[sign])
             ax.set_title("%s" % sign)
         fh.text(0.04, 0.5, "Voxel Count Sparsity values", va='center',
                 rotation='vertical')
@@ -409,7 +417,8 @@ def _generate_plot_2_3(wb_master, R_master, L_master, out_dir):
         plt.title("L1 Sparsity of each component: Comparison of WB "
                   "and %s-only decomposition" % hemi, fontsize=16)
         sns.boxplot(x="n_comp", y="l1_%s" % hemi, ax=ax,
-                    hue="decomposition_type", data=sparsity_summary)
+                    hue="decomposition_type", data=sparsity_summary,
+                    palette=hemi_colors[hemi])
         ax.set_xlabel("Number of components")
         ax.set_ylabel("L1 sparsity values")
 
@@ -420,15 +429,21 @@ def _generate_plot_4(wb_master, scoring, out_dir):
 
     # 4) Matching results: average matching scores and proportion of unmatched
     print "Plotting matching results"
+    set2 = sns.color_palette("Set2")
+    palette = [set2[2], set2[0], set2[1]]
+    title = "Matching scores for the best-matched pairs"
+    xlabel = "Number of components"
+    ylabel = "Matching score using %s" % scoring
+
     out_path = op.join(out_dir, '4_Matching_results_box.png')
     score_cols = ["matchR_score", "matchL_score", "matchRL-unforced_score"]
     match_scores = pd.melt(wb_master[["n_comp"] + score_cols], id_vars="n_comp",
                            value_vars=score_cols)
 
     fh = plt.figure(figsize=(10, 6))
-    plt.title("Matching scores for the best-matched pairs")
-    ax = sns.boxplot(x="n_comp", y="value", hue="variable", data=match_scores)
-    ax.set(xlabel="Number of components", ylabel="Matching score using %s" % scoring)
+    plt.title(title)
+    ax = sns.boxplot(x="n_comp", y="value", hue="variable", data=match_scores, palette=palette)
+    ax.set(xlabel=xlabel, ylabel=ylabel)
 
     save_and_close(out_path, fh=fh)
 
@@ -441,13 +456,12 @@ def _generate_plot_4(wb_master, scoring, out_dir):
     unmatched["proportion"] = unmatched.value / unmatched.n_comp.astype(float)
 
     fh = plt.figure(figsize=(10, 6))
-    plt.title("Matching scores for the best-matched pairs")
-    ax = sns.pointplot(x="n_comp", y="value", hue="variable",
+    plt.title(title)
+    ax = sns.pointplot(x="n_comp", y="value", hue="variable", palette=palette,
                        data=match_scores, dodge=0.3)
-    # sns.stripplot(x="n_comp", y="value", hue="variable", data=match_scores, ax=ax)
-    sns.pointplot(x="n_comp", y="proportion", hue="variable",
-                  data=unmatched, dodge=0.3, ax=ax, linestyles="--")
-    ax.set(xlabel="Number of components", ylabel="Matching score using %s" % scoring)
+    sns.pointplot(x="n_comp", y="proportion", hue="variable", palette=palette,
+                  data=unmatched, dodge=0.3, ax=ax, linestyles="--", markers="s")
+    ax.set(xlabel=xlabel, ylabel=ylabel)
     fh.text(0.95, 0.5, "Proportion of unmatched R- or L- components", va="center", rotation=-90)
 
     save_and_close(out_path, fh=fh)
@@ -457,6 +471,9 @@ def _generate_plot_5(wb_master, scoring, out_dir):
 
     # 5) SSS for wb components and matched RL components
     print "Plotting SSS for wb components"
+    pastel2 = sns.color_palette("Pastel2")
+    set2 = sns.color_palette("Set2")
+    palette = [set2[1], pastel2[1]]
     title = "Spatial Symmetry Score for WB and the matched RL components"
     xlabel = "Number of components"
     ylabel = "Spatial Symmetry Score using %s " % scoring
@@ -469,7 +486,7 @@ def _generate_plot_5(wb_master, scoring, out_dir):
 
     fh = plt.figure(figsize=(10, 6))
     plt.title(title)
-    ax = sns.boxplot(x="n_comp", y="value", hue="variable", data=sss)
+    ax = sns.boxplot(x="n_comp", y="value", hue="variable", data=sss, palette=palette)
     ax.set(xlabel=xlabel, ylabel=ylabel)
 
     save_and_close(out_path, fh=fh)
@@ -488,22 +505,21 @@ def _generate_plot_5(wb_master, scoring, out_dir):
                  c="grey", linestyle=linestyle, linewidth=1.0)
 
     # add scatter points
-    colors = sns.color_palette("Spectral")
-    plt.scatter(wb_master.n_comp.astype(int) - 1, wb_master.wb_SSS,
-                c=colors[1], label="WB")
-    plt.scatter(wb_master.n_comp.astype(int) + 1, wb_master.matchedRL_SSS,
-                c=colors[4], label="matched RL")
+    plt.scatter(wb_master.n_comp.astype(int) - 1, wb_master.wb_SSS, s=80,
+                edgecolor="orange", facecolor=set2[1], label="WB")
+    plt.scatter(wb_master.n_comp.astype(int) + 1, wb_master.matchedRL_SSS, s=80,
+                edgecolor="orange", facecolor=pastel2[1], label="matched RL")
     plt.legend()
 
     # add mean change
     by_comp = wb_master.groupby("n_comp")
     for c, grouped in by_comp:
-        linestyle = "-" if (grouped.wb_SSS.mean() - grouped.matchedRL_SSS.mean()) > 0 else "--"
+        linestyle = "-" if (grouped.wb_SSS.mean() - grouped.matchedRL_SSS.mean()) < 0 else "--"
         plt.plot([int(c) - 1, int(c) + 1], [grouped.wb_SSS.mean(), grouped.matchedRL_SSS.mean()],
                  c="black", linestyle=linestyle)
     comp_arr = np.asarray(map(int, components))
-    plt.scatter(comp_arr - 1, by_comp.wb_SSS.mean(), c=colors[0], s=80, marker="+")
-    plt.scatter(comp_arr + 1, by_comp.matchedRL_SSS.mean(), c=colors[5], s=80, marker="+")
+    plt.scatter(comp_arr - 1, by_comp.wb_SSS.mean(), c="orange", s=100, marker="+")
+    plt.scatter(comp_arr + 1, by_comp.matchedRL_SSS.mean(), c="orange", s=100, marker="+")
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
 
@@ -513,6 +529,8 @@ def _generate_plot_5(wb_master, scoring, out_dir):
 def _generate_plot_6(wb_master, R_master, L_master, out_dir):
     # 6) Plot ACNI for wb and hemi-components
     print "Generating plots of ACNI for wb and hemi-components"
+    set2 = sns.color_palette("Set2")
+    palette = [set2[2], set2[0], set2[1]]
     # Prepare ACNI for wb and hemi-components
     acni_cols = ["n_comp", "ACNI", "decomposition_type"]
     acni_summary = pd.DataFrame(columns=acni_cols)
@@ -532,7 +550,7 @@ def _generate_plot_6(wb_master, R_master, L_master, out_dir):
                            "Comparison of WB and R- or L-only decomposition", 60))
     plt.title(title, fontsize=16)
     sns.boxplot(x="n_comp", y="ACNI", ax=ax, hue="decomposition_type",
-                data=acni_summary, palette="Set2")
+                data=acni_summary, palette=palette)
     ax.set_xlabel("Number of components")
     ax.set_ylabel("Proportion of Anti-Correlated Network")
 
