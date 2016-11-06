@@ -337,6 +337,7 @@ def plot_term_comparisons(termscores_summary, labels, plot_type="heatmap",
             ax.set_title(title, weight='bold', size='medium', position=(0.5, 1.1),
                          horizontalalignment='center', verticalalignment='center')
             sns.heatmap(data, center=0.0, ax=ax, cbar=True)
+            plt.yticks(rotation=0)
 
         else:
             raise NotImplementedError(plot_type)
