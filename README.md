@@ -12,13 +12,14 @@ Note: if using `virtualenv`, run: `fix-osx-virtualenv env/` (if `env/` is your v
 
 Run each script with `--help` to view all script options.
 
-* `main.py` - Downloads images, computes components, compares/matches & plots components.
+* `analysis.py` - Runs full analysis suite (completed for SfN 2016)
+* `match.py` - Downloads images, computes components, compares/matches & plots components.
 * `qc.py` - Downloads images, visualizes them for quality control purposes.
 
 
 ### Outputs
 
-For `main.py`:
+For `analysis.py` / `match.py`:
 * `ica_nii` - directory containing Nifti1 label maps for each of 20 ICA components when run on left-only, right-only, and both hemispheres.
 * `ica_map` - Png images showing each component above (20 for each ICA run) when run on left-only, right-only, and both hemispheres.
 
