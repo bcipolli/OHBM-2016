@@ -6,7 +6,7 @@ import numpy as np
 
 import nibabel as nib
 from nilearn import datasets
-from nilearn.image import iter_img, reorder_img, new_img_like
+from nilearn.image import iter_img, reorder_img, new_img_like, index_img
 from nilearn.input_data import NiftiMasker
 from sklearn.externals.joblib import Memory
 
@@ -83,7 +83,7 @@ class MniNiftiMasker(NiftiMasker):
 
 
 def flip_img_lr(img):
-    """ Convenience function to flip image on X axis"""
+    """Convenience function to flip image on X axis"""
     # This won't work for all image formats! But
     # does work for those that we're working with...
     assert isinstance(img, nib.nifti1.Nifti1Image)
@@ -93,8 +93,8 @@ def flip_img_lr(img):
 
 def split_bilateral_rois(maps_img):
     """Convenience function for splitting bilateral ROIs
-    into two unilateral ROIs"""
-
+    into two unilateral ROIs
+    """
     new_rois = []
 
     for map_img in iter_img(maps_img):
@@ -108,8 +108,8 @@ def split_bilateral_rois(maps_img):
 
     new_maps_data = np.concatenate(new_rois, axis=3)
     new_maps_img = new_img_like(maps_img, data=new_maps_data, copy_header=True)
-    print("Changed from %d ROIs to %d ROIs" % (maps_img.shape[-1],
-                                               new_maps_img.shape[-1]))
+    # print("Changed from %d ROIs to %d ROIs" % (maps_img.shape[-1], # This isn't right...
+    #                                            new_maps_img.shape[-1]))
     return new_maps_img
 
 
@@ -119,6 +119,20 @@ def join_bilateral_rois(R_img, L_img):  # noqa
 
     joined_data = R_img.get_data() + L_img.get_data()
     return new_img_like(R_img, data=joined_data)
+
+
+def get_hemi_gm_mask(hemi="L"):
+    """Convenience function for getting WB, R or L gm mask"""
+    target_img = nib.load(fetch_grey_matter_mask())
+    grey_voxels = (target_img.get_data() > 0).astype(int)
+    gm_img = new_img_like(target_img, grey_voxels, copy_header=True)
+    gm_imgs = split_bilateral_rois(gm_img)
+    gm_imgs_d = {hemi: index_img(gm_imgs, i)
+                 for hemi, i in zip(("L", "R"), (0, 1))}
+    gm_imgs_d["wb"] = gm_img
+
+    return gm_imgs_d[hemi]
+
 
 
 class HemisphereMasker(NiftiMasker):
@@ -187,7 +201,7 @@ class HemisphereMasker(NiftiMasker):
 
 
 class MniHemisphereMasker(HemisphereMasker):
-    """ Alias for HemisphereMasker with mask_img==Mni template"""
+    """Alias for HemisphereMasker with mask_img==Mni template"""
     def __init__(self, sessions=None, smoothing_fwhm=None,
                  standardize=False, detrend=False,
                  low_pass=None, high_pass=None, t_r=None,
@@ -220,7 +234,7 @@ class MniHemisphereMasker(HemisphereMasker):
             hemisphere=hemisphere)
 
     def mask_as_img(self, img):
-        """ Convenience function to mask image, return as image."""
+        """Convenience function to mask image, return as image."""
         X = self.fit_transform(img)  # noqa
         new_img = self.inverse_transform(X)
         return new_img_like(img, data=new_img.get_data(), copy_header=True)

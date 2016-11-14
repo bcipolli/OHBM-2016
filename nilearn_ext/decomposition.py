@@ -1,6 +1,8 @@
 # *- encoding: utf-8 -*-
 # Author: Ben Cipollini, Ami Tsuchida
 # License: BSD
+"""
+"""
 
 import os
 import os.path as op
@@ -8,6 +10,7 @@ import os.path as op
 import numpy as np
 from nilearn import datasets
 from nilearn.image import iter_img
+from nilearn.masking import apply_mask
 
 from six import string_types
 from sklearn.decomposition import FastICA
@@ -16,15 +19,14 @@ from scipy import stats
 
 from nibabel_ext import NiftiImageWithTerms
 from .image import cast_img, clean_img
-from .masking import HemisphereMasker, flip_img_lr, GreyMatterNiftiMasker
+from .masking import HemisphereMasker, flip_img_lr, GreyMatterNiftiMasker, get_hemi_gm_mask
 
 
 def generate_components(images, hemi, term_scores=None,
                         n_components=20, random_state=42,
                         out_dir=None, memory=Memory(cachedir='nilearn_cache')):
-    """
-        images: list
-            Can be nibabel images, can be file paths.
+    """Images: list
+    Can be nibabel images, can be file paths.
     """
     # Create grey matter mask from mni template
     target_img = datasets.load_mni152_template()
@@ -72,8 +74,9 @@ def generate_components(images, hemi, term_scores=None,
     # X ~ ica_maps * fast_ica.components_
     #   = (ica_maps * f) * (fast_ica.components_ / f)
     #   = new_ica_map * new_components_
-    C=fast_ica.components_
-    factor=np.sqrt(np.multiply(C,C).sum(axis=1,keepdims=True)) # (n_components x 1)
+    C = fast_ica.components_
+    factor = np.sqrt(
+        np.multiply(C, C).sum(axis=1, keepdims=True))  # (n_components x 1)
     ica_maps = np.multiply(ica_maps, factor)
     fast_ica.components_ = np.multiply(C, 1.0 / (factor + 1e-12))
 
@@ -117,7 +120,7 @@ def compare_components(images, labels, scoring='correlation', flip=True,
     assert len(labels) == 2
     assert images[0].shape == images[1].shape
     n_components = images[0].shape[3]  # values @ 0 and 1 are the same
-    labels = [l.upper() for l in labels] # make input labels case insensitive
+    labels = [l.upper() for l in labels]  # make input labels case insensitive
     print("Loading images.")
     for img in images:
         img.get_data()  # Just loaded to get them in memory..
@@ -164,7 +167,8 @@ def compare_components(images, labels, scoring='correlation', flip=True,
             # Choose a scoring system.
             # Score should indicate DISSIMILARITY
             # Component sign is meaningless, so try both unless flip = False,
-            # and keep track of comparisons that had better score when flipping the sign
+            # and keep track of comparisons that had better score
+            # when flipping the sign
             score = np.inf
             if flip:
                 signs = [1, -1]
@@ -188,3 +192,28 @@ def compare_components(images, labels, scoring='correlation', flip=True,
             score_mat[c1i, c2i] = score
 
     return score_mat, sign_mat
+
+
+def compare_RL(wb_img, scoring="correlation",
+               memory=Memory(cachedir='nilearn_cache')):
+    ''' Compare R and L side of the whole-brain image using the specified method'''
+
+    n_components = wb_img.shape[3]
+
+    # Use only lh_masker to ensure the same size
+    mask = get_hemi_gm_mask(hemi="L")
+    masked_r = apply_mask(flip_img_lr(wb_img), mask)
+    masked_l = apply_mask(wb_img, mask)
+
+    print("Comparing R and L spatial similarity using %s" % scoring)
+    score_arr = np.zeros(n_components)
+    for i in range(n_components):
+        if not isinstance(scoring, string_types):  # function
+            sc = scoring(masked_r[i], masked_l[i])
+        elif scoring == 'correlation':
+            sc = stats.stats.pearsonr(masked_r[i], masked_l[i])[0]
+        else:
+            raise NotImplementedError(scoring)
+        score_arr[i] = sc
+
+    return score_arr

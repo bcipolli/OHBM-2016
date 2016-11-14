@@ -165,9 +165,9 @@ def main_ic_loop(components, scoring,
             # main analysis is run for each component and match method:
             # plotting for component comparisons are done only if force=True
             img_d, score_mats_d, sign_mats_d = do_main_analysis(
-                    dataset=dataset, images=images, term_scores=term_scores,
-                    key=match_method, force=force, plot=force,
-                    n_components=c, scoring=scoring, **kwargs)
+                dataset=dataset, images=images, term_scores=term_scores,
+                key=match_method, force=force, plot=force,
+                n_components=c, scoring=scoring, **kwargs)
 
             # Get mean dissimilarity scores and number of unmatched for each comparisons
             # in score_mats_d

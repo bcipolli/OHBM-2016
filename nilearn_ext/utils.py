@@ -58,10 +58,10 @@ def get_match_idx_pair(score_mat, sign_mat, force=False):
     This function takes a distance matrix and sign matrix and find
     the column index with min score for each row. It returns a summary dict for
     matched and unmatched indices and sign flipping info;
-    e.g. match = {"idx": np.array(row_idx, column_idx), 
-                  "sign": np.array(np.ones, column_sign_flips)} 
+    e.g. match = {"idx": np.array(row_idx, column_idx),
+                  "sign": np.array(np.ones, column_sign_flips)}
 
-    unmatch dict contains same info for any column idx not used for the primary 
+    unmatch dict contains same info for any column idx not used for the primary
     match, paired with its best matching reference row.
 
     If Force = True, one-to-one matching is forced, and unmatch dict would contain None.
@@ -83,10 +83,10 @@ def get_match_idx_pair(score_mat, sign_mat, force=False):
         rows = np.arange(score_mat.shape[0])
         cols = score_mat.argmin(axis=1)
         matched_signs = sign_mat[[rows, cols]]
-        
+
         match["idx"] = np.vstack((rows, cols))
         match["sign"] = np.vstack((np.ones(len(rows)), matched_signs))
-        
+
         unmatched_cols = np.setdiff1d(rows, cols)
         if unmatched_cols is not None and len(unmatched_cols) == 0:
             unmatch["idx"], unmatch["sign"] = None, None
@@ -94,7 +94,7 @@ def get_match_idx_pair(score_mat, sign_mat, force=False):
             unmatched_msi = score_mat.argmin(axis=0)
             unmatched_rows = unmatched_msi[unmatched_cols]
             unmatched_signs = sign_mat[[unmatched_rows, unmatched_cols]]
-            
+
             unmatch["idx"] = np.vstack((unmatched_rows, unmatched_cols))
             unmatch["sign"] = np.vstack((np.ones(len(unmatched_rows)), unmatched_signs))
 
