@@ -60,9 +60,9 @@ def _neurovault_dedupe(images, term_scores, strict=False, verbose=False):
                 hard_reject = True
             else:
                 # Duplicate; verify via image data.
-                d1 = nib.load(dup_image['local_path']).get_data()
+                d1 = nib.load(dup_image['absolute_path']).get_data()
                 d1 = d1[np.logical_not(np.isnan(d1))]
-                d2 = nib.load(image['local_path']).get_data()
+                d2 = nib.load(image['absolute_path']).get_data()
                 d2 = d2[np.logical_not(np.isnan(d2))]
 
                 hard_reject = np.all(np.abs(d1 - d2) < 1E-10)
@@ -93,7 +93,7 @@ def _neurovault_remove_bad_images(images, term_scores, verbose=False):
     binary_idx = []
 
     for image in images:
-        dat = nib.load(image['local_path']).get_data()
+        dat = nib.load(image['absolute_path']).get_data()
         dat = dat[dat != 0]
         is_rejected = np.all(dat > 0) or np.all(dat < 0) or (np.unique(dat).size < 2000)
 
@@ -103,7 +103,7 @@ def _neurovault_remove_bad_images(images, term_scores, verbose=False):
         if not is_rejected:
             good_images.append(image)
         elif verbose:
-            print "REJECT: %s %s " % (image['map_type'], image['local_path'])
+            print "REJECT: %s %s " % (image['map_type'], image['absolute_path'])
 
     # Now filter each term
     binary_idx = np.asarray(binary_idx)
@@ -122,16 +122,18 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
     # and the desired entry for each field as the value.
     # Since neurovault metadata are not always filled, it also includes any
     # images with missing values for the any given field.
+    datasets.neurovault.set_logging_level(datasets.neurovault.logging.DEBUG)
     filt_dict = {'modality': 'fMRI-BOLD',
                  'is_thresholded': False, 'not_mni': False}
 
     def make_fun(key, val):
         return lambda img: img.get(key) == val
+
     image_filters = list(image_filters) + [
         lambda img: (img.get('map_type') or '') in map_types,
-        lambda img: (img.get('analysis_level') or '') in ('', 'group')
+        lambda img: (img.get('analysis_level') or '') in ('group')
     ]
-    image_filters = (image_filters +
+    image_filters = (list(image_filters) +
                      [make_fun(key, val) for key, val in filt_dict.items()])
 
     # Also remove bad collections
@@ -144,23 +146,35 @@ def fetch_neurovault(max_images=np.inf, query_server=True, fetch_terms=True,
     col_ids = [-bid for bid in bad_collects]
     collection_ids = list(collection_ids) + col_ids
 
-    kwargs['image_filters'] = (list(kwargs.get('image_filters', [])) +
-                               image_filters)
-    kwargs['collection_ids'] = (kwargs.get('collection_ids', []) +
-                                collection_ids)
+    # kwargs['image_filters'] = (list(kwargs.get('image_filters', [])) +
+    #                            image_filters)
+    # kwargs['collection_ids'] = (kwargs.get('collection_ids', []) +
+    #                             collection_ids)
+
+    # Download matching images
+    def image_filter(img_metadata):
+        if img_metadata.get('collection_id') in collection_ids:
+            return False
+        for filt in image_filters:
+            if not filt(img_metadata):
+                return False
+        return True
+
     ss_all = datasets.fetch_neurovault(
-        query_server=query_server,
-        max_images=max_images, map_types=map_types,
-        fetch_terms=fetch_terms, **kwargs)
-    images = ss_all['images']
-    term_scores = ss_all.get('terms', dict())
+        mode='download_new' if query_server else 'offline',
+        max_images=max_images, image_filter=image_filter,
+        fetch_neurosynth_words=fetch_terms)
+    images = ss_all['images_meta']
+    term_scores = dict(zip(
+        ss_all.get('vocabulary', list()),
+        ss_all.get('word_frequencies', np.array((0,))).T))
 
     # Post-fetcher filtering: remove duplicates, bad images from raw data.
     images, term_scores = _neurovault_dedupe(images, term_scores)
     images, term_scores = _neurovault_remove_bad_images(images, term_scores)
 
     # Stamp some collection properties onto images.
-    colls = dict([(c['id'], c) for c in ss_all['collections'].values()])
+    colls = dict([(c['id'], c) for c in ss_all['collections_meta']])
     for image in images:
         image['DOI'] = colls.get(image['collection_id'], {}).get('DOI')
 

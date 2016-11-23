@@ -577,7 +577,7 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
             print("Generating or loading ICA components for %s,"
                   " n=%d components" % (hemi, c))
             nii_dir = op.join('ica_nii', dataset, str(c))
-            kwargs = dict(images=[im['local_path'] for im in images],
+            kwargs = dict(images=[im['absolute_path'] for im in images],
                           n_components=c, term_scores=term_scores,
                           out_dir=nii_dir, memory=memory)
 
