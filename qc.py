@@ -12,7 +12,7 @@ import pandas as pd
 from nilearn.plotting import plot_stat_map
 from sklearn.externals.joblib import Memory
 
-from main import get_dataset
+from match import get_dataset
 from nilearn_ext.image import clean_img, cast_img
 from nilearn_ext.masking import GreyMatterNiftiMasker
 from nilearn_ext.plotting import save_and_close
@@ -43,7 +43,7 @@ def qc_image_data(dataset, images, plot_dir='qc'):
                      'perc_bad_voxels', 'perc_voxels_outside'))
 
     for ii, image in enumerate(images):
-        im_path = image['local_path']
+        im_path = image['absolute_path']
         if im_path is None:
             continue
 

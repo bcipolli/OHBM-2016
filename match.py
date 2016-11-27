@@ -117,13 +117,13 @@ def get_dataset(dataset, max_images=np.inf, **kwargs):
     elif dataset == 'abide':
         dataset = datasets.fetch_abide_pcp(
             n_subjects=min(94, max_images), **kwargs)
-        images = [{'local_path': p} for p in dataset['func_preproc']]
+        images = [{'absolute_path': p} for p in dataset['func_preproc']]
         term_scores = None
 
     elif dataset == 'nyu':
         dataset = datasets.fetch_nyu_rest(
             n_subjects=min(25, max_images), **kwargs)
-        images = [{'local_path': p} for p in dataset['func']]
+        images = [{'absolute_path': p} for p in dataset['func']]
         term_scores = None
 
     else:
@@ -240,7 +240,7 @@ def do_match_analysis(dataset, images, term_scores, key="wb", n_components=20,
     imgs = {}
 
     # Load or generate components
-    kwargs = dict(images=[im['local_path'] for im in images],
+    kwargs = dict(images=[im['absolute_path'] for im in images],
                   n_components=n_components, term_scores=term_scores,
                   out_dir=nii_dir, plot_dir=plot_dir, no_plot=not plot)
     for hemi in hemis:
