@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 import nibabel as nib
 import numpy as np
 import pandas as pd
+import scipy.stats as stats
 import seaborn as sns
 from nilearn.image import index_img, math_img
 from nilearn.plotting import plot_stat_map
@@ -124,15 +125,17 @@ def generate_component_specific_plots(wb_master, components, scoring, out_dir=No
         save_and_close(out_path)
 
 
-def plot_variations_wb_vs_RL(imgs, wb_master, out_dir=None):
+def plot_variations_wb_vs_RL(imgs, wb_master, metric='correlation', out_dir=None):
     components = np.unique(wb_master['n_comp'])
     out_file = out_dir and op.join(
         out_dir,
-        'dot_img_%s.nii' % '_'.join([str(c) for c in components]))
+        'comparison_img_%s.%s.nii' % (
+            '_'.join([str(c) for c in components]),
+            metric))
 
     # Load or generate the comparison image.
     if out_file and op.exists(out_file):
-        dot_img = nib.load(out_file)
+        comparison_img = nib.load(out_file)
 
     else:
         # Reorder r and l such that they best match wb.
@@ -155,13 +158,31 @@ def plot_variations_wb_vs_RL(imgs, wb_master, out_dir=None):
         feature_vecs['rl'] = math_img('R+L', **feature_vecs)
 
         # Now do the dot product.
-        dot_img = math_img('np.sqrt(np.sum((rl - wb)**2, axis=3))', **feature_vecs)
-        nib.save(dot_img, out_file)
+        if metric == 'l1':
+            comparison_img = math_img('np.sum(np.abs(rl - wb), axis=3)', **feature_vecs)
+        elif metric == 'l2':
+            comparison_img = math_img('np.sqrt(np.sum((rl - wb)**2, axis=3))', **feature_vecs)
+        elif metric == 'correlation':
+            from nilearn.masking import apply_mask, unmask
+            from nilearn_ext.masking import get_mask_by_key
+
+            wb_mask = get_mask_by_key('wb')
+            wb_data = apply_mask(feature_vecs['wb'], wb_mask)
+            rl_data = apply_mask(feature_vecs['rl'], wb_mask)
+            img_data = np.zeros((rl_data.shape[1],))
+            for vi in range(img_data.size):
+                img_data[vi] = stats.stats.pearsonr(
+                    wb_data[:, vi], rl_data[:, vi])[0]
+            # Do 1 - correlation, so that higher is more dissimilar.
+            comparison_img = unmask(1 - img_data, wb_mask)
+        else:
+            raise ValueError("Unknown metric: %s" % metric)
+        nib.save(comparison_img, out_file)
 
     # Plot the comparison image
     for mode in ['x', 'y', 'z']:
         plot_stat_map(
-            dot_img, display_mode=mode, cut_coords=15, black_bg=True,
+            comparison_img, display_mode=mode, cut_coords=15, black_bg=True,
             title="rl vs. wb similarity (%s)" % mode, colorbar=True)
         if out_file:
             plot_file = out_file.replace('.nii', '-%s.png' % mode)
