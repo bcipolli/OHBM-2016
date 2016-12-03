@@ -121,18 +121,17 @@ def join_bilateral_rois(R_img, L_img):  # noqa
     return new_img_like(R_img, data=joined_data)
 
 
-def get_hemi_gm_mask(hemi="L"):
+def get_mask_by_key(key="L"):
     """Convenience function for getting WB, R or L gm mask"""
     target_img = nib.load(fetch_grey_matter_mask())
     grey_voxels = (target_img.get_data() > 0).astype(int)
     gm_img = new_img_like(target_img, grey_voxels, copy_header=True)
+    if key == 'wb':
+        return gm_img
     gm_imgs = split_bilateral_rois(gm_img)
     gm_imgs_d = {hemi: index_img(gm_imgs, i)
                  for hemi, i in zip(("L", "R"), (0, 1))}
-    gm_imgs_d["wb"] = gm_img
-
-    return gm_imgs_d[hemi]
-
+    return gm_imgs_d[key]
 
 
 class HemisphereMasker(NiftiMasker):

@@ -14,7 +14,7 @@ from nilearn.masking import apply_mask
 from scipy import stats
 from textwrap import wrap
 
-from nilearn_ext.masking import get_hemi_gm_mask
+from nilearn_ext.masking import get_mask_by_key
 from nilearn_ext.plotting import save_and_close
 
 
@@ -33,7 +33,7 @@ def calculate_acni(img, hemi, percentile=95.0):
     n_components = img.shape[3]
 
     # Get threshold values for each image based on the given percentile val.
-    gm_mask = get_hemi_gm_mask(hemi=hemi)
+    gm_mask = get_mask_by_key(hemi)
     masked = apply_mask(img, gm_mask)
     thr = stats.scoreatpercentile(np.abs(masked), percentile, axis=1)
     reshaped_thr = thr.reshape((n_components, 1))
