@@ -242,12 +242,12 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     # Reset indices of master DFs and save
     master_DFs = dict(
         wb_master=wb_master, R_master=R_master, L_master=L_master)
-    print "Saving summary csvs..."
     for key in master_DFs:
         master_DFs[key].reset_index(inplace=True)
         master_DFs[key].to_csv(op.join(out_dir, '%s_summary.csv' % key))
 
     # Generate plots
+    print "Examining differences in wb vs. rl..."
     plot_variations_wb_vs_RL(imgs, wb_master, out_dir=out_dir)
 
     # To set size proportional to vc sparsity in several graphs, add columns with

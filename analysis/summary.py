@@ -34,7 +34,6 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
     # If summary data are already saved as csv files, simply load them
     if not force and all([op.exists(op.join(out_dir, csv)) for csv in summary_csvs]):
-        print("Loading summary data from %s" % out_dir)
         (wb_summary, R_summary, L_summary) = (pd.read_csv(op.join(out_dir, csv))
                                               for csv in summary_csvs)
 
