@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import re
 
-from main import do_main_analysis, get_dataset
+from analysis.match import do_match_analysis, get_dataset
 from nibabel_ext import NiftiImageWithTerms
 from nilearn_ext.masking import HemisphereMasker
 from nilearn_ext.plotting import save_and_close
@@ -164,7 +164,7 @@ def main_ic_loop(components, scoring,
             print("Running analysis with %d components" % c)
             # main analysis is run for each component and match method:
             # plotting for component comparisons are done only if force=True
-            img_d, score_mats_d, sign_mats_d = do_main_analysis(
+            img_d, score_mats_d, sign_mats_d = do_match_analysis(
                 dataset=dataset, images=images, term_scores=term_scores,
                 key=match_method, force=force, plot=force,
                 n_components=c, scoring=scoring, **kwargs)

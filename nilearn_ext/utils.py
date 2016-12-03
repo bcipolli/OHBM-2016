@@ -48,7 +48,6 @@ def reorder_mat(mat, normalize=True):
         col_reidx[pi] = msi
 
     # Now reorder according to top-to-least match.
-    # import pdb; pdb.set_trace()
     out_mat = (norm_mat if normalize else mat.T)[col_reidx].T
     return out_mat, col_reidx, row_reidx  # col=x, row=y, thus the ordering
 

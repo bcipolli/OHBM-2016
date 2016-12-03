@@ -103,7 +103,7 @@ def _compare_components_and_plot(images, labels, scoring, out_dir=None):
     # Plot comparison matrix
     for normalize in [False, True]:
         plot_comparison_matrix(
-            score_mat, labels, scoring, normalize=normalize, out_dir=out_dir)
+            score_mat, labels, normalize=normalize, out_dir=out_dir)
 
     return score_mat, sign_mat
 
