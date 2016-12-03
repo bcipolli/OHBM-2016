@@ -139,9 +139,14 @@ def plot_variations_wb_vs_RL(imgs, wb_master, out_dir=None):
         for ci, c in enumerate(components):
             wb_summary = wb_master[wb_master['n_comp'] == c]
             for k in ['R', 'L']:
-                # Reorder the images
-                idx = abs(wb_summary['matched%s' % k].astype(int))
-                imgs[k][ci] = index_img(imgs[k][ci], idx)
+                # Reorder & flip sign on the components within each image
+                img = imgs[k][ci]
+                idx = wb_summary['matched%s' % k].astype(int)
+                idx, sign = np.abs(idx), np.sign(idx)
+
+                imgs[k][ci] = nib.concat_images(
+                    [math_img('img * %d' % si, img=index_img(img, ii))
+                     for ii, si in zip(idx, sign)])
 
         # Concatenate all ica components into a single image, per condition
         feature_vecs = dict([(k, nib.concat_images(v, axis=3)) for k, v in imgs.items()])
