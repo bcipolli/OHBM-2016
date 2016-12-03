@@ -97,7 +97,7 @@ def split_bilateral_rois(maps_img):
     """
     new_rois = []
 
-    for map_img in iter_img(maps_img):
+    for map_img in iter_img(maps_img if len(maps_img.shape) >= 4 else [maps_img]):
         for hemi in ['L', 'R']:
             hemi_mask = HemisphereMasker(hemisphere=hemi)
             hemi_mask.fit(map_img)
