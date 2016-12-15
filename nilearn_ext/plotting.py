@@ -6,7 +6,6 @@ import os
 import os.path as op
 
 import numpy as np
-import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 from nilearn import datasets
@@ -14,7 +13,7 @@ from nilearn.image import iter_img, index_img, math_img
 from nilearn.plotting import plot_stat_map
 from scipy import stats
 
-from nilearn_ext.utils import reorder_mat, get_ic_terms, get_n_terms, get_match_idx_pair
+from nilearn_ext.utils import reorder_mat, get_n_terms, get_match_idx_pair
 from nilearn_ext.radar import radar_factory
 
 import math
@@ -256,7 +255,7 @@ def plot_matched_components(images, labels, score_mat, sign_mat,
             save_and_close(out_path=op.join(out_dir, png_name), fh=fh)
 
 
-def plot_comparison_matrix(score_mat, labels, scoring, normalize=True,
+def plot_comparison_matrix(score_mat, labels, normalize=True,
                            out_dir=None, vmax=None, colorbar=True, prefix=""):
 
     # Settings

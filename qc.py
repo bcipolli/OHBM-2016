@@ -12,7 +12,7 @@ import pandas as pd
 from nilearn.plotting import plot_stat_map
 from sklearn.externals.joblib import Memory
 
-from match import get_dataset
+from analysis.match import get_dataset
 from nilearn_ext.image import clean_img, cast_img
 from nilearn_ext.masking import GreyMatterNiftiMasker
 from nilearn_ext.plotting import save_and_close
