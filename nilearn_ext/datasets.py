@@ -94,7 +94,9 @@ def _neurovault_remove_bad_images(images, term_scores, verbose=False):
 
     for image in images:
         dat = nib.load(image['absolute_path']).get_data()
-        dat = dat[dat != 0]
+        dat = dat[np.logical_and(
+            dat != 0,
+            np.logical_not(np.isnan(dat)))]
         is_rejected = np.all(dat > 0) or np.all(dat < 0) or (np.unique(dat).size < 2000)
 
         image['rejected'] = is_rejected
