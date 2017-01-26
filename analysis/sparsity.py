@@ -12,7 +12,7 @@ from nilearn.image import iter_img
 from nilearn.masking import apply_mask
 from scipy import stats
 
-from nilearn_ext.masking import get_hemi_gm_mask
+from nilearn_ext.masking import get_mask_by_key
 from nilearn_ext.plotting import save_and_close
 
 
@@ -57,7 +57,7 @@ def get_hemi_sparsity(img, hemi, thr=0.000005):
     The dict also contains n_voxels for the given hemi.
     """
     # Transform img to vector for the specified hemisphere
-    gm_mask = get_hemi_gm_mask(hemi=hemi)
+    gm_mask = get_mask_by_key(hemi)
     masked = apply_mask(img, gm_mask)
     sparsity_dict = {}
     sparsity_dict["l1"] = np.linalg.norm(masked, axis=1, ord=1)

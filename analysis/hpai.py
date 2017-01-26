@@ -13,7 +13,7 @@ from nilearn.masking import apply_mask
 from scipy import stats
 
 from .sparsity import SPARSITY_SIGNS
-from nilearn_ext.masking import flip_img_lr, get_hemi_gm_mask
+from nilearn_ext.masking import flip_img_lr, get_mask_by_key
 from nilearn_ext.plotting import save_and_close
 
 
@@ -34,14 +34,14 @@ def calculate_hpai(wb_img, percentile=95.0):
     hpai_d = {}
 
     # Get threshold values for each image based on the given percentile val.
-    gm_mask = get_hemi_gm_mask(hemi="wb")
+    gm_mask = get_mask_by_key("wb")
     wb_masked = apply_mask(wb_img, gm_mask)
     thr = stats.scoreatpercentile(np.abs(wb_masked), percentile, axis=1)
     reshaped_thr = thr.reshape((n_components, 1))
 
     # Count the number of voxels above the threshold in each hemisphere.
     # Use only lh_masker to ensure the same size
-    hemi_mask = get_hemi_gm_mask(hemi="L")
+    hemi_mask = get_mask_by_key("L")
     masked_r = apply_mask(flip_img_lr(wb_img), hemi_mask)
     masked_l = apply_mask(wb_img, hemi_mask)
     for sign in SPARSITY_SIGNS:

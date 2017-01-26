@@ -34,7 +34,6 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
 
     # If summary data are already saved as csv files, simply load them
     if not force and all([op.exists(op.join(out_dir, csv)) for csv in summary_csvs]):
-        print("Loading summary data from %s" % out_dir)
         (wb_summary, R_summary, L_summary) = (pd.read_csv(op.join(out_dir, csv))
                                               for csv in summary_csvs)
 
@@ -105,13 +104,16 @@ def load_or_generate_summary(images, term_scores, n_components, scoring, dataset
         for comparison in comparisons:
             score_mat, sign_mat = score_mats_d[comparison], sign_mats_d[comparison]
             matched, unmatched = get_match_idx_pair(score_mat, sign_mat)
+            # Add '-unforced' in the match name since this is not forcing one-to-one match
+            suf = '' if 'unforced' in comparison[1] else '-unforced'
+            match_name = comparison[1] + suf
             # Component indices for matched R, L , RL are in matched["idx"][1].
-            # Multiply it by matched["sign"][1], which stores sign flipping info.
-            matched_indices = matched["idx"][1] * matched["sign"][1]
-            wb_summary["matched%s" % comparison[1]] = matched_indices
+            # Signs are in matched["sign"][1]
+            wb_summary["matched%s_idx" % match_name] = matched["idx"][1]
+            wb_summary["matched%s_sign" % match_name] = matched["sign"][1]
 
             matched_scores = score_mat[matched["idx"][0], matched["idx"][1]]
-            wb_summary["match%s_score" % comparison[1]] = matched_scores
+            wb_summary["match%s_score" % match_name] = matched_scores
             num_unmatched = unmatched["idx"].shape[1] if unmatched["idx"] is not None else 0
             wb_summary["n_unmatched%s" % comparison[1]] = num_unmatched
 

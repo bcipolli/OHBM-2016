@@ -29,9 +29,13 @@ import sys
 sys.path.append(op.abspath(op.join(op.abspath(__file__), '..')))
 
 import matplotlib.pyplot as plt
+import nibabel as nib
 import numpy as np
 import pandas as pd
+import scipy.stats as stats
 import seaborn as sns
+from nilearn.image import index_img, math_img
+from nilearn.plotting import plot_stat_map
 from sklearn.externals.joblib import Memory
 from textwrap import wrap
 
@@ -41,14 +45,15 @@ from analysis.match import get_dataset, load_or_generate_components
 from analysis.sparsity import SPARSITY_SIGNS, get_sparsity_threshold, plot_sparsity
 from analysis.sss import plot_matching, plot_sss
 from analysis.summary import load_or_generate_summary
-from nilearn_ext.plotting import save_and_close, rescale
+# from nilearn_ext.decomposition import compare_components
+from nilearn_ext.plotting import save_and_close, rescale  # , plot_comparison_matrix
 
 
 def generate_component_specific_plots(wb_master, components, scoring, out_dir=None):
     """Asdf"""
     start_idx = 0
     for c in components:
-        wb_summary = wb_master[start_idx:(start_idx + c)]
+        wb_summary = wb_master[wb_master['n_comp'] == c]
         assert len(wb_summary) == c
         start_idx += c
 
@@ -120,6 +125,70 @@ def generate_component_specific_plots(wb_master, components, scoring, out_dir=No
         save_and_close(out_path)
 
 
+def plot_variations_wb_vs_RL(imgs, wb_master, metric='correlation', out_dir=None):
+    components = np.unique(wb_master['n_comp'])
+    out_file = out_dir and op.join(
+        out_dir,
+        'comparison_img_%s.%s.nii' % (
+            '_'.join([str(c) for c in components]),
+            metric))
+
+    # Load or generate the comparison image.
+    if out_file and op.exists(out_file):
+        comparison_img = nib.load(out_file)
+
+    else:
+        # Reorder r and l such that they best match wb.
+        for ci, c in enumerate(components):
+            wb_summary = wb_master[wb_master['n_comp'] == c]
+            for k in ['R', 'L']:
+                # Reorder & flip sign on the components within each image
+                img = imgs[k][ci]
+                idx = wb_summary['matched%s' % k].astype(int)
+                idx, sign = np.abs(idx), np.sign(idx)
+
+                imgs[k][ci] = nib.concat_images(
+                    [math_img('img * %d' % si, img=index_img(img, ii))
+                     for ii, si in zip(idx, sign)])
+
+        # Concatenate all ica components into a single image, per condition
+        feature_vecs = dict([(k, nib.concat_images(v, axis=3)) for k, v in imgs.items()])
+
+        # Make a comparison for wb vs. rl
+        feature_vecs['rl'] = math_img('R+L', **feature_vecs)
+
+        # Now do the dot product.
+        if metric == 'l1':
+            comparison_img = math_img('np.sum(np.abs(rl - wb), axis=3)', **feature_vecs)
+        elif metric == 'l2':
+            comparison_img = math_img('np.sqrt(np.sum((rl - wb)**2, axis=3))', **feature_vecs)
+        elif metric == 'correlation':
+            from nilearn.masking import apply_mask, unmask
+            from nilearn_ext.masking import get_mask_by_key
+
+            wb_mask = get_mask_by_key('wb')
+            wb_data = apply_mask(feature_vecs['wb'], wb_mask)
+            rl_data = apply_mask(feature_vecs['rl'], wb_mask)
+            img_data = np.zeros((rl_data.shape[1],))
+            for vi in range(img_data.size):
+                img_data[vi] = stats.stats.pearsonr(
+                    wb_data[:, vi], rl_data[:, vi])[0]
+            # Do 1 - correlation, so that higher is more dissimilar.
+            comparison_img = unmask(1 - img_data, wb_mask)
+        else:
+            raise ValueError("Unknown metric: %s" % metric)
+        nib.save(comparison_img, out_file)
+
+    # Plot the comparison image
+    for mode in ['x', 'y', 'z']:
+        plot_stat_map(
+            comparison_img, display_mode=mode, cut_coords=15, black_bg=True,
+            title="rl vs. wb similarity (%s)" % mode, colorbar=True)
+        if out_file:
+            plot_file = out_file.replace('.nii', '-%s.png' % mode)
+            save_and_close(plot_file)
+
+
 def loop_main_and_plot(components, scoring, dataset, query_server=True,
                        force=False, plot=True, max_images=np.inf,
                        memory=Memory(cachedir='nilearn_cache')):
@@ -173,12 +242,14 @@ def loop_main_and_plot(components, scoring, dataset, query_server=True,
     # Reset indices of master DFs and save
     master_DFs = dict(
         wb_master=wb_master, R_master=R_master, L_master=L_master)
-    print "Saving summary csvs..."
     for key in master_DFs:
         master_DFs[key].reset_index(inplace=True)
         master_DFs[key].to_csv(op.join(out_dir, '%s_summary.csv' % key))
 
     # Generate plots
+    print "Examining differences in wb vs. rl..."
+    plot_variations_wb_vs_RL(imgs, wb_master, out_dir=out_dir)
+
     # To set size proportional to vc sparsity in several graphs, add columns with
     # vc vals
     for sign in SPARSITY_SIGNS:
@@ -228,3 +299,4 @@ if __name__ == '__main__':
 
     loop_main_and_plot(
         components=components, query_server=query_server, plot=plot, **args)
+    plt.show()  # make sure any remaining plots are shown.

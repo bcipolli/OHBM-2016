@@ -19,7 +19,7 @@ from scipy import stats
 
 from nibabel_ext import NiftiImageWithTerms
 from .image import cast_img, clean_img
-from .masking import HemisphereMasker, flip_img_lr, GreyMatterNiftiMasker, get_hemi_gm_mask
+from .masking import HemisphereMasker, flip_img_lr, GreyMatterNiftiMasker, get_mask_by_key
 
 
 def generate_components(images, hemi, term_scores=None,
@@ -196,12 +196,11 @@ def compare_components(images, labels, scoring='correlation', flip=True,
 
 def compare_RL(wb_img, scoring="correlation",
                memory=Memory(cachedir='nilearn_cache')):
-    ''' Compare R and L side of the whole-brain image using the specified method'''
-
+    """Compare R and L side of the whole-brain image using the specified method"""
     n_components = wb_img.shape[3]
 
     # Use only lh_masker to ensure the same size
-    mask = get_hemi_gm_mask(hemi="L")
+    mask = get_mask_by_key("L")
     masked_r = apply_mask(flip_img_lr(wb_img), mask)
     masked_l = apply_mask(wb_img, mask)
 
