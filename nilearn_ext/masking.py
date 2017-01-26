@@ -188,9 +188,9 @@ class HemisphereMasker(NiftiMasker):
         xvals = hemi_mask_data.shape[0]
         midpt = np.ceil(xvals / 2.)
         if self.hemi == 'r':
-            other_hemi_slice = slice(midpt, xvals)
+            other_hemi_slice = slice(int(midpt), xvals)
         else:
-            other_hemi_slice = slice(0, midpt)
+            other_hemi_slice = slice(0, int(midpt))
 
         hemi_mask_data[other_hemi_slice] = False
         mask_data = self.mask_img_.get_data() * hemi_mask_data
